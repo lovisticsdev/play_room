@@ -1,0 +1,13 @@
+[package]
+name = "play-room-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+play-room-core.workspace = true
+play-room-protocol.workspace = true
+clap.workspace = true
+tokio.workspace = true
+thiserror.workspace = true

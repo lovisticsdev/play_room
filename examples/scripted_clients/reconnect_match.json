@@ -1,0 +1,9 @@
+{
+  "name": "reconnect match",
+  "steps": [
+    { "step": "connect", "client": "alice" },
+    { "step": "create_room", "client": "alice", "name": "reconnect demo" },
+    { "step": "disconnect", "client": "alice" },
+    { "step": "reconnect", "client": "alice" }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "spectator match",
+  "steps": [
+    { "step": "connect", "client": "alice" },
+    { "step": "connect", "client": "bob" },
+    { "step": "connect", "client": "eve" },
+    { "step": "create_room", "client": "alice", "name": "spectator demo" },
+    { "step": "spectate", "client": "eve" }
+  ]
+}

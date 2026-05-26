@@ -1,0 +1,12 @@
+{
+  "name": "timeout match",
+  "steps": [
+    { "step": "connect", "client": "alice" },
+    { "step": "connect", "client": "bob" },
+    { "step": "create_room", "client": "alice", "name": "timeout demo" },
+    { "step": "ready", "client": "alice" },
+    { "step": "ready", "client": "bob" },
+    { "step": "move", "client": "alice", "mv": "paper" },
+    { "step": "wait_ms", "ms": 16000 }
+  ]
+}
