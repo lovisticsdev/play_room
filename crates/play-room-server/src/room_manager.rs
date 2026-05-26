@@ -23,6 +23,8 @@ pub struct ConnectedPlayer {
 }
 
 type RoundTimer = (u32, u64);
+pub type OutboundMessage = (PlayerId, ServerMessage);
+pub type OutboundMessages = Vec<OutboundMessage>;
 type AppliedRoomCommand = (RoomId, Vec<RoomEvent>, Option<RoundTimer>);
 
 impl RoomManager {
@@ -62,7 +64,7 @@ impl RoomManager {
         }
     }
 
-    pub fn disconnect(&mut self, player_id: &PlayerId) -> Vec<(PlayerId, ServerMessage)> {
+    pub fn disconnect(&mut self, player_id: &PlayerId) -> OutboundMessages {
         self.sessions.remove(player_id);
         if let Some(room_id) = self.player_rooms.get(player_id).cloned() {
             if let Some(room) = self.rooms.get_mut(&room_id) {
@@ -107,29 +109,33 @@ impl RoomManager {
         owner_id: &PlayerId,
         name: String,
         rules: Option<GameRules>,
-    ) -> Result<RoomId, String> {
+    ) -> Result<(RoomId, OutboundMessages), String> {
         let player_name = self
             .player_names
             .get(owner_id)
             .cloned()
             .unwrap_or_else(|| "player".to_owned());
-        if let Some(previous) = self.player_rooms.get(owner_id).cloned() {
-            self.leave_room(owner_id, &previous).ok();
-        }
         let room_id = new_room_id();
         let host = Player::participant(owner_id.clone(), player_name);
         let room = GameRoom::new(room_id.clone(), name, rules.unwrap_or_default(), host)
             .map_err(|e| e.to_string())?;
+
+        let mut messages = OutboundMessages::new();
+        if let Some(previous) = self.player_rooms.get(owner_id).cloned() {
+            messages.extend(self.leave_room(owner_id, &previous)?);
+        }
+
         self.player_rooms.insert(owner_id.clone(), room_id.clone());
         self.rooms.insert(room_id.clone(), room);
-        Ok(room_id)
+        messages.extend(self.room_messages(&room_id, Vec::new()));
+        Ok((room_id, messages))
     }
 
     pub fn join_room(
         &mut self,
         player_id: &PlayerId,
         room_id_or_name: &RoomId,
-    ) -> Result<Vec<(PlayerId, ServerMessage)>, String> {
+    ) -> Result<OutboundMessages, String> {
         self.join_room_as(player_id, room_id_or_name, PlayerRole::Participant)
     }
 
@@ -137,7 +143,7 @@ impl RoomManager {
         &mut self,
         player_id: &PlayerId,
         room_id_or_name: &RoomId,
-    ) -> Result<Vec<(PlayerId, ServerMessage)>, String> {
+    ) -> Result<OutboundMessages, String> {
         self.join_room_as(player_id, room_id_or_name, PlayerRole::Spectator)
     }
 
@@ -146,13 +152,8 @@ impl RoomManager {
         player_id: &PlayerId,
         room_id_or_name: &RoomId,
         role: PlayerRole,
-    ) -> Result<Vec<(PlayerId, ServerMessage)>, String> {
+    ) -> Result<OutboundMessages, String> {
         let room_id = self.resolve_room_id(room_id_or_name)?;
-        if let Some(previous) = self.player_rooms.get(player_id).cloned() {
-            if previous != room_id {
-                self.leave_room(player_id, &previous).ok();
-            }
-        }
         let player_name = self
             .player_names
             .get(player_id)
@@ -162,6 +163,25 @@ impl RoomManager {
             PlayerRole::Participant => Player::participant(player_id.clone(), player_name),
             PlayerRole::Spectator => Player::spectator(player_id.clone(), player_name),
         };
+
+        let mut probe = self
+            .rooms
+            .get(&room_id)
+            .ok_or_else(|| format!("room not found: {room_id}"))?
+            .clone();
+        probe
+            .apply(RoomCommand::Join {
+                player: player.clone(),
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut messages = OutboundMessages::new();
+        if let Some(previous) = self.player_rooms.get(player_id).cloned() {
+            if previous != room_id {
+                messages.extend(self.leave_room(player_id, &previous)?);
+            }
+        }
+
         let room = self
             .rooms
             .get_mut(&room_id)
@@ -170,7 +190,8 @@ impl RoomManager {
             .apply(RoomCommand::Join { player })
             .map_err(|e| e.to_string())?;
         self.player_rooms.insert(player_id.clone(), room_id.clone());
-        Ok(self.room_messages(&room_id, events))
+        messages.extend(self.room_messages(&room_id, events));
+        Ok(messages)
     }
 
     fn resolve_room_id(&self, room_id_or_name: &RoomId) -> Result<RoomId, String> {
@@ -195,10 +216,7 @@ impl RoomManager {
         }
     }
 
-    pub fn leave_current_room(
-        &mut self,
-        player_id: &PlayerId,
-    ) -> Result<Vec<(PlayerId, ServerMessage)>, String> {
+    pub fn leave_current_room(&mut self, player_id: &PlayerId) -> Result<OutboundMessages, String> {
         let room_id = self
             .player_rooms
             .get(player_id)
@@ -211,7 +229,7 @@ impl RoomManager {
         &mut self,
         player_id: &PlayerId,
         room_id: &RoomId,
-    ) -> Result<Vec<(PlayerId, ServerMessage)>, String> {
+    ) -> Result<OutboundMessages, String> {
         let room = self
             .rooms
             .get_mut(room_id)
@@ -264,7 +282,7 @@ impl RoomManager {
         room_id: &RoomId,
         round: u32,
         now_ms: u64,
-    ) -> Result<Vec<(PlayerId, ServerMessage)>, String> {
+    ) -> Result<OutboundMessages, String> {
         let room = self
             .rooms
             .get_mut(room_id)
@@ -275,11 +293,7 @@ impl RoomManager {
         Ok(self.room_messages(room_id, events))
     }
 
-    pub fn room_messages(
-        &self,
-        room_id: &RoomId,
-        events: Vec<RoomEvent>,
-    ) -> Vec<(PlayerId, ServerMessage)> {
+    pub fn room_messages(&self, room_id: &RoomId, events: Vec<RoomEvent>) -> OutboundMessages {
         let Some(room) = self.rooms.get(room_id) else {
             return Vec::new();
         };
@@ -307,7 +321,7 @@ impl RoomManager {
         messages
     }
 
-    pub fn flush_messages(&self, messages: Vec<(PlayerId, ServerMessage)>) {
+    pub fn flush_messages(&self, messages: OutboundMessages) {
         for (player_id, message) in messages {
             self.send_to(&player_id, message);
         }
@@ -321,7 +335,7 @@ mod tests {
     fn joins_room_by_exact_name_when_id_is_not_used() {
         let mut manager = RoomManager::default();
         let host_id = PlayerId::new("host");
-        let room_id = manager
+        let (room_id, _) = manager
             .create_room(&host_id, "testroom".to_owned(), None)
             .unwrap();
         let guest_id = PlayerId::new("guest");
@@ -354,7 +368,7 @@ mod tests {
     fn can_spectate_a_full_room_by_exact_name() {
         let mut manager = RoomManager::default();
         let host_id = PlayerId::new("host");
-        let room_id = manager
+        let (room_id, _) = manager
             .create_room(&host_id, "testroom".to_owned(), None)
             .unwrap();
         manager
@@ -376,5 +390,146 @@ mod tests {
 
         assert!(!messages.is_empty());
         assert_eq!(spectator.role, PlayerRole::Spectator);
+    }
+
+    fn has_room_event(
+        messages: &OutboundMessages,
+        recipient: &PlayerId,
+        room_id: &RoomId,
+        predicate: impl Fn(&RoomEvent) -> bool,
+    ) -> bool {
+        messages.iter().any(|(target, message)| {
+            target == recipient
+                && matches!(
+                    message,
+                    ServerMessage::Event {
+                        event: ServerEvent::RoomEvent {
+                            room_id: event_room_id,
+                            event
+                        }
+                    } if event_room_id == room_id && predicate(event)
+                )
+        })
+    }
+
+    fn has_snapshot_without_player(
+        messages: &OutboundMessages,
+        recipient: &PlayerId,
+        room_id: &RoomId,
+        absent_player_id: &PlayerId,
+    ) -> bool {
+        messages.iter().any(|(target, message)| {
+            target == recipient
+                && matches!(
+                    message,
+                    ServerMessage::Event {
+                        event: ServerEvent::RoomSnapshot { room }
+                    } if &room.id == room_id
+                        && !room.players.iter().any(|player| &player.id == absent_player_id)
+                )
+        })
+    }
+
+    fn room_has_player(manager: &RoomManager, room_id: &RoomId, player_id: &PlayerId) -> bool {
+        manager
+            .rooms
+            .get(room_id)
+            .map(|room| {
+                room.snapshot()
+                    .players
+                    .iter()
+                    .any(|player| &player.id == player_id)
+            })
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn create_room_preserves_old_room_leave_messages() {
+        let mut manager = RoomManager::default();
+        let alice = PlayerId::new("alice");
+        let bob = PlayerId::new("bob");
+        let (old_room_id, _) = manager
+            .create_room(&alice, "old-room".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob, &old_room_id).unwrap();
+
+        let (new_room_id, messages) = manager
+            .create_room(&alice, "new-room".to_owned(), None)
+            .unwrap();
+
+        assert_eq!(manager.player_rooms.get(&alice), Some(&new_room_id));
+        assert!(has_room_event(
+            &messages,
+            &bob,
+            &old_room_id,
+            |event| matches!(
+                event,
+                RoomEvent::PlayerLeft { player_id } if player_id == &alice
+            )
+        ));
+        assert!(has_snapshot_without_player(
+            &messages,
+            &bob,
+            &old_room_id,
+            &alice
+        ));
+    }
+
+    #[test]
+    fn joining_another_room_preserves_old_room_leave_messages() {
+        let mut manager = RoomManager::default();
+        let alice = PlayerId::new("alice");
+        let bob = PlayerId::new("bob");
+        let carol = PlayerId::new("carol");
+        let (old_room_id, _) = manager
+            .create_room(&alice, "old-room".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob, &old_room_id).unwrap();
+        let (new_room_id, _) = manager
+            .create_room(&carol, "new-room".to_owned(), None)
+            .unwrap();
+
+        let messages = manager.join_room(&alice, &new_room_id).unwrap();
+
+        assert_eq!(manager.player_rooms.get(&alice), Some(&new_room_id));
+        assert!(has_room_event(
+            &messages,
+            &bob,
+            &old_room_id,
+            |event| matches!(
+                event,
+                RoomEvent::PlayerLeft { player_id } if player_id == &alice
+            )
+        ));
+        assert!(has_snapshot_without_player(
+            &messages,
+            &bob,
+            &old_room_id,
+            &alice
+        ));
+    }
+
+    #[test]
+    fn failed_move_to_full_room_keeps_player_in_current_room() {
+        let mut manager = RoomManager::default();
+        let alice = PlayerId::new("alice");
+        let bob = PlayerId::new("bob");
+        let carol = PlayerId::new("carol");
+        let dave = PlayerId::new("dave");
+        let (old_room_id, _) = manager
+            .create_room(&alice, "old-room".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob, &old_room_id).unwrap();
+        let (full_room_id, _) = manager
+            .create_room(&carol, "full-room".to_owned(), None)
+            .unwrap();
+        manager.join_room(&dave, &full_room_id).unwrap();
+
+        let err = manager.join_room(&alice, &full_room_id).unwrap_err();
+
+        assert!(err.contains("room is full"));
+        assert_eq!(manager.player_rooms.get(&alice), Some(&old_room_id));
+        assert!(room_has_player(&manager, &old_room_id, &alice));
+        assert!(!room_has_player(&manager, &full_room_id, &alice));
     }
 }

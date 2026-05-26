@@ -39,9 +39,8 @@ pub async fn route(
         ClientRequest::CreateRoom { name, rules } => {
             let mut locked = manager.lock().await;
             match locked.create_room(&player_id, name, rules) {
-                Ok(room_id) => {
+                Ok((_room_id, messages)) => {
                     locked.respond(&player_id, request_id, ServerResult::Ok);
-                    let messages = locked.room_messages(&room_id, Vec::new());
                     locked.flush_messages(messages);
                 }
                 Err(message) => {

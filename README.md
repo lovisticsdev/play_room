@@ -19,7 +19,7 @@ The project is split by responsibility so the game rules stay deterministic and 
 ## Workspace Layout
 
 ```text
-lay_room/
+play_room/
 |-- crates/
 |   |-- play-room-core/      # Pure game rules, room state, commands, events
 |   |-- play-room-protocol/  # JSON-lines protocol messages and codecs
