@@ -71,13 +71,23 @@ cargo run -p play-room-client -- --name alice
 cargo run -p play-room-client -- --name bob
 ```
 
-PowerShell helper scripts are also available:
+Helper scripts are also available:
 
 ```powershell
 .\scripts\run-server.ps1
 .\scripts\run-client.ps1 -Name alice
 .\scripts\run-client.ps1 -Name bob
+.\scripts\run-web.ps1
 ```
+
+```bash
+bash scripts/run-server.sh
+bash scripts/run-client.sh alice
+bash scripts/run-client.sh bob
+bash scripts/run-web.sh
+```
+
+See [scripts/README.md](scripts/README.md) for options.
 
 To run the browser client:
 
