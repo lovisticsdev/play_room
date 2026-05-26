@@ -5,6 +5,7 @@
     { "step": "connect", "client": "bob" },
     { "step": "connect", "client": "eve" },
     { "step": "create_room", "client": "alice", "name": "spectator demo" },
-    { "step": "spectate", "client": "eve" }
+    { "step": "join_room", "client": "bob", "room_id": "spectator demo" },
+    { "step": "spectate", "client": "eve", "room_id": "spectator demo" }
   ]
 }

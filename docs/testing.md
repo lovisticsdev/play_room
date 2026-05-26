@@ -14,3 +14,4 @@ Run all tests with:
 ```bash
 cargo test --workspace
 ```
+Scripted scenario fixtures under `examples/scripted_clients/` are executable examples. The `scripted_scenarios` integration test loads every JSON file, deserializes it through `play-room-testkit`, and runs it against an in-memory room state machine.

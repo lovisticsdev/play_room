@@ -27,7 +27,7 @@ play_room/
 |   |-- play-room-client/    # Terminal client runtime and command parser
 |   `-- play-room-testkit/   # Scripted scenario and test helper utilities
 |-- docs/                    # Architecture, protocol, state-machine, testing notes
-|-- examples/                # Example server config and scripted client data
+|-- examples/                # Server config and executable scripted client fixtures
 |-- scripts/                 # Convenience run scripts
 |-- tests/                   # Workspace integration tests
 |   `-- common/              # Shared integration-test helpers
@@ -146,7 +146,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The integration suite covers protocol round-trips, two-player matches, spectator restrictions, reconnect flow, and timeout resolution.
+The integration suite covers protocol round-trips, two-player matches, spectator restrictions, reconnect flow, timeout resolution, and every JSON fixture in `examples/scripted_clients/`.
 
 ## Repository Notes
 

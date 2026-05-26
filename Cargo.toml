@@ -63,3 +63,6 @@ path = "tests/reconnect_flow.rs"
 [[test]]
 name = "timeout_flow"
 path = "tests/timeout_flow.rs"
+[[test]]
+name = "scripted_scenarios"
+path = "tests/scripted_scenarios.rs"

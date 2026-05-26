@@ -4,6 +4,7 @@
     { "step": "connect", "client": "alice" },
     { "step": "connect", "client": "bob" },
     { "step": "create_room", "client": "alice", "name": "lobby" },
+    { "step": "join_room", "client": "bob", "room_id": "lobby" },
     { "step": "ready", "client": "alice" },
     { "step": "ready", "client": "bob" },
     { "step": "move", "client": "alice", "mv": "rock" },
