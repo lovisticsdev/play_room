@@ -18,3 +18,8 @@
 /dist/
 /build/
 /tmp/
+
+# Web client
+/web/node_modules/
+/web/dist/
+/web/.vite/

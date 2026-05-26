@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "play-room-server", about = "Run the Play Room TCP server")]
+#[command(name = "play-room-server", about = "Run the Play Room server")]
 pub struct ServerArgs {
     #[arg(long, default_value = "examples/server.toml")]
     pub config: PathBuf,

@@ -1,6 +1,11 @@
 # Protocol
 
-The protocol is newline-delimited JSON over TCP. Each line is one complete JSON object.
+Play Room uses the same JSON request, response, event, and snapshot shapes across two transports.
+
+- TCP clients send newline-delimited JSON. Each line is one complete JSON object.
+- Browser clients send the same JSON objects in WebSocket text frames.
+
+The server listens on one host/port and upgrades HTTP WebSocket handshakes while preserving the raw TCP path for the terminal client.
 
 Client messages use this shape:
 

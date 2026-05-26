@@ -1,19 +1,20 @@
 # Play Room
 
-Play Room is a Rust workspace for a reconnectable multiplayer game room system. It includes deterministic Rock Paper Scissors / Rock Paper Scissors Lizard Spock game logic, a JSON-lines TCP protocol, an async server, a terminal client, scripted test helpers, and integration tests for the main gameplay flows.
+Play Room is a Rust workspace for a reconnectable multiplayer game room system. It includes deterministic Rock Paper Scissors / Rock Paper Scissors Lizard Spock game logic, an async server, a terminal client, a Svelte browser client, scripted test helpers, and integration tests for the main gameplay flows.
 
 The project is split by responsibility so the game rules stay deterministic and testable while the server owns sockets, sessions, broadcasts, reconnect tokens, and timers.
 
 ## Features
 
-- TCP server using newline-delimited JSON messages
+- Shared server port for TCP JSON-lines clients and browser WebSocket clients
 - Terminal client with room, ready, move, spectator, and reconnect commands
+- Svelte + TypeScript web client for real-time room and game visualization
 - Deterministic core room state machine
 - Participant-aware room flow with players and spectators
 - Timed rounds and timeout resolution
 - Reconnect tokens for client sessions
 - RPS and RPSLS move support
-- Workspace integration tests and scripted test helpers
+- Workspace integration tests and executable scripted fixtures
 - Warning-clean Rust checks with clippy warnings denied
 
 ## Workspace Layout
@@ -22,10 +23,11 @@ The project is split by responsibility so the game rules stay deterministic and 
 play_room/
 |-- crates/
 |   |-- play-room-core/      # Pure game rules, room state, commands, events
-|   |-- play-room-protocol/  # JSON-lines protocol messages and codecs
-|   |-- play-room-server/    # Async TCP server, sessions, timers, broadcasts
+|   |-- play-room-protocol/  # Request, response, event, and JSON codec types
+|   |-- play-room-server/    # Async TCP/WebSocket server, timers, broadcasts
 |   |-- play-room-client/    # Terminal client runtime and command parser
 |   `-- play-room-testkit/   # Scripted scenario and test helper utilities
+|-- web/                     # Svelte browser client
 |-- docs/                    # Architecture, protocol, state-machine, testing notes
 |-- examples/                # Server config and executable scripted client fixtures
 |-- scripts/                 # Convenience run scripts
@@ -39,11 +41,12 @@ play_room/
 ## Requirements
 
 - Rust stable toolchain
-- PowerShell, Bash, or any shell capable of running Cargo commands
+- Node.js 18+ for the browser client
+- PowerShell, Bash, or any shell capable of running Cargo and npm commands
 
 ## Quick Start
 
-Run the full test suite first:
+Run the Rust test suite first:
 
 ```bash
 cargo test --workspace
@@ -61,7 +64,7 @@ The default server config listens on:
 127.0.0.1:7878
 ```
 
-Start two clients in separate terminals:
+Start two terminal clients in separate terminals:
 
 ```bash
 cargo run -p play-room-client -- --name alice
@@ -71,10 +74,29 @@ cargo run -p play-room-client -- --name bob
 PowerShell helper scripts are also available:
 
 ```powershell
-
 .\scripts\run-server.ps1
 .\scripts\run-client.ps1 -Name alice
 .\scripts\run-client.ps1 -Name bob
+```
+
+To run the browser client:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173
+```
+
+The browser client connects to the server through WebSocket at:
+
+```text
+ws://127.0.0.1:7878/ws
 ```
 
 ## Gameplay Walkthrough
@@ -122,7 +144,12 @@ The server broadcasts room events and authoritative snapshots as the match progr
 
 ## Protocol
 
-The wire protocol is newline-delimited JSON over TCP. Each client request includes a numeric `request_id`; server messages are responses, room events, or room snapshots. Clients should treat snapshots as authoritative.
+The same JSON envelope is available through two transports:
+
+- TCP clients send newline-delimited JSON.
+- Browser clients send JSON in WebSocket text frames.
+
+Each client request includes a numeric `request_id`; server messages are responses, room events, or room snapshots. Clients should treat snapshots as authoritative.
 
 See [docs/protocol.md](docs/protocol.md) for message examples.
 
@@ -146,8 +173,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+For the web client, run:
+
+```bash
+cd web
+npm run check
+npm run build
+```
+
 The integration suite covers protocol round-trips, two-player matches, spectator restrictions, reconnect flow, timeout resolution, and every JSON fixture in `examples/scripted_clients/`.
 
 ## Repository Notes
 
-`Cargo.lock` is committed because this workspace includes runnable binaries. Build output, local runtime files, logs, and editor metadata are ignored.
+`Cargo.lock` is committed because this workspace includes runnable binaries. Build output, local runtime files, logs, package installs, and editor metadata are ignored.

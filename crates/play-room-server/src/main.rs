@@ -7,6 +7,7 @@ mod router;
 mod scheduler;
 mod server;
 mod session;
+mod websocket_session;
 
 use clap::Parser;
 use config::{ServerArgs, ServerConfig};

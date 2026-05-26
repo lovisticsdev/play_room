@@ -10,6 +10,9 @@ pub enum ServerError {
     #[error("protocol error: {0}")]
     Protocol(#[from] ProtocolError),
 
+    #[error("websocket error: {0}")]
+    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
+
     #[error("core error: {0}")]
     Core(#[from] CoreError),
 
