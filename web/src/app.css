@@ -1,0 +1,401 @@
+:root {
+  color-scheme: dark;
+  --ink: #0b0d0a;
+  --ink-2: #10140f;
+  --panel: rgba(19, 24, 19, 0.96);
+  --panel-2: rgba(8, 11, 9, 0.98);
+  --line: rgba(214, 203, 161, 0.18);
+  --line-strong: rgba(214, 203, 161, 0.34);
+  --paper: #f0e8cc;
+  --muted: #9ea58c;
+  --teal: #28d6b3;
+  --teal-2: #0f8f7c;
+  --amber: #f5b84b;
+  --red: #ff5a57;
+  --green: #78d45f;
+  --violet: #9b7cff;
+  --shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  --radius: 8px;
+  background: var(--ink);
+  font-family: "Bahnschrift", "Aptos", "Trebuchet MS", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--paper);
+  background:
+    linear-gradient(90deg, rgba(245, 184, 75, 0.06) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(245, 184, 75, 0.045) 1px, transparent 1px),
+    linear-gradient(135deg, #0b0d0a 0%, #11180f 48%, #070806 100%);
+  background-size: 44px 44px, 44px 44px, auto;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(115deg, transparent 0 14px, rgba(40, 214, 179, 0.035) 14px 15px),
+    linear-gradient(180deg, rgba(240, 232, 204, 0.04), transparent 35%);
+  mix-blend-mode: screen;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.26;
+  background-image: repeating-radial-gradient(circle at 0 0, rgba(240, 232, 204, 0.16) 0 1px, transparent 1px 5px);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  width: min(1320px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 44px;
+}
+
+.app-shell > .glass-card:first-child {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(40, 214, 179, 0.34);
+}
+
+.app-shell > .glass-card:first-child::before {
+  content: "LIVE ROOM CONSOLE";
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  color: rgba(245, 184, 75, 0.9);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+}
+
+h1,
+h2,
+h3,
+.form-label,
+.btn,
+.badge {
+  letter-spacing: 0;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--paper);
+  font-family: "Bahnschrift", "Franklin Gothic Medium", "Aptos Narrow", sans-serif;
+  font-weight: 700;
+}
+
+.form-label {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.card,
+.glass-card,
+.modal-content,
+.list-group-item {
+  color: var(--paper);
+  background:
+    linear-gradient(145deg, var(--panel) 0%, var(--panel-2) 100%),
+    linear-gradient(90deg, rgba(40, 214, 179, 0.08), transparent 45%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(240, 232, 204, 0.05);
+}
+
+.glass-card {
+  animation: panel-rise 420ms ease both;
+}
+
+.card-body {
+  padding: 1rem;
+}
+
+.form-control,
+.form-select {
+  min-height: 42px;
+  color: var(--paper);
+  background: #0a0d0b;
+  border: 1px solid rgba(158, 165, 140, 0.34);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
+.form-control:focus,
+.form-select:focus {
+  color: #fff9df;
+  background: #0e130f;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 0.18rem rgba(40, 214, 179, 0.18), inset 0 0 0 1px rgba(40, 214, 179, 0.2);
+}
+
+.form-control::placeholder {
+  color: rgba(158, 165, 140, 0.74);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  color: rgba(240, 232, 204, 0.48);
+  background: rgba(8, 11, 9, 0.72);
+}
+
+.text-muted {
+  color: var(--muted) !important;
+}
+
+.text-light {
+  color: var(--paper) !important;
+}
+
+.text-info {
+  color: var(--teal) !important;
+}
+
+.text-success {
+  color: var(--green) !important;
+}
+
+.text-warning {
+  color: var(--amber) !important;
+}
+
+.text-danger {
+  color: var(--red) !important;
+}
+
+.btn {
+  min-height: 38px;
+  border-radius: 6px;
+  font-weight: 800;
+  text-transform: uppercase;
+  transition: transform 140ms ease, border-color 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.btn-primary,
+.btn-success {
+  color: #05110e;
+  background: linear-gradient(180deg, var(--teal), #18ac92);
+  border-color: rgba(40, 214, 179, 0.9);
+  box-shadow: 0 10px 22px rgba(40, 214, 179, 0.2);
+}
+
+.btn-primary:hover,
+.btn-success:hover {
+  color: #03100d;
+  background: linear-gradient(180deg, #49efd0, var(--teal-2));
+}
+
+.btn-outline-light,
+.btn-outline-info,
+.btn-outline-secondary {
+  color: var(--paper);
+  border-color: var(--line-strong);
+  background: rgba(240, 232, 204, 0.03);
+}
+
+.btn-outline-light:hover,
+.btn-outline-info:hover,
+.btn-outline-secondary:hover {
+  color: #06100d;
+  border-color: var(--teal);
+  background: var(--teal);
+}
+
+.btn-outline-warning {
+  color: var(--amber);
+  border-color: rgba(245, 184, 75, 0.6);
+}
+
+.btn-outline-warning:hover,
+.btn-warning,
+.text-bg-warning {
+  color: #1c1200 !important;
+  background: var(--amber) !important;
+  border-color: var(--amber) !important;
+}
+
+.btn-outline-danger {
+  color: var(--red);
+  border-color: rgba(255, 90, 87, 0.66);
+}
+
+.btn-outline-danger:hover,
+.text-bg-danger {
+  color: #fff0ee !important;
+  background: var(--red) !important;
+  border-color: var(--red) !important;
+}
+
+.btn:disabled {
+  color: rgba(240, 232, 204, 0.42);
+  border-color: rgba(158, 165, 140, 0.2);
+  background: rgba(158, 165, 140, 0.08);
+  opacity: 1;
+}
+
+.list-group {
+  gap: 8px;
+}
+
+.list-group-item {
+  padding: 0.92rem;
+  background: linear-gradient(135deg, rgba(23, 29, 22, 0.98), rgba(12, 16, 13, 0.98));
+}
+
+.room-id {
+  color: var(--teal);
+  font-family: "Cascadia Code", "Consolas", "Liberation Mono", monospace;
+  font-size: 0.83em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.badge {
+  border-radius: 5px;
+  font-weight: 800;
+}
+
+.badge-soft {
+  color: var(--paper);
+  background: rgba(240, 232, 204, 0.08);
+  border: 1px solid var(--line);
+}
+
+.text-bg-info {
+  color: #04100d !important;
+  background: var(--teal) !important;
+}
+
+.text-bg-success {
+  color: #071006 !important;
+  background: var(--green) !important;
+}
+
+.text-bg-secondary {
+  color: var(--paper) !important;
+  background: rgba(158, 165, 140, 0.22) !important;
+}
+
+.player-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0.28rem 0.72rem;
+  color: var(--paper);
+  background: linear-gradient(90deg, rgba(240, 232, 204, 0.08), rgba(40, 214, 179, 0.07));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  box-shadow: inset 0 1px 0 rgba(240, 232, 204, 0.05);
+}
+
+.player-pill > .fw-semibold {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-log {
+  max-height: 400px;
+  overflow-y: auto;
+  color: #c8d0b0;
+  font-family: "Cascadia Code", "Consolas", "Liberation Mono", monospace;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.event-line {
+  padding: 0.34rem 0;
+  border-bottom: 1px solid rgba(240, 232, 204, 0.07);
+}
+
+.event-line:last-child {
+  border-bottom: none;
+}
+
+.move-button {
+  min-width: 118px;
+  min-height: 48px;
+}
+
+.input-group .form-control {
+  min-width: 0;
+}
+
+@keyframes panel-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    width: min(100% - 20px, 1320px);
+    padding-top: 16px;
+  }
+
+  .app-shell > .glass-card:first-child::before {
+    position: static;
+    display: block;
+    margin-bottom: 0.75rem;
+  }
+
+  .card-body {
+    padding: 0.88rem;
+  }
+
+  .move-button {
+    flex: 1 1 45%;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

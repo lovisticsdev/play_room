@@ -110,15 +110,32 @@ impl RoomManager {
         name: String,
         rules: Option<GameRules>,
     ) -> Result<(RoomId, OutboundMessages), String> {
+        let room_name = name.trim();
+        if room_name.is_empty() {
+            return Err("room name is empty".to_owned());
+        }
+        if self
+            .rooms
+            .values()
+            .any(|room| room.name().trim().eq_ignore_ascii_case(room_name))
+        {
+            return Err(format!("room name already exists: {room_name}"));
+        }
+
         let player_name = self
             .player_names
             .get(owner_id)
             .cloned()
-            .unwrap_or_else(|| "player".to_owned());
+            .unwrap_or_else(|| owner_id.as_str().to_owned());
         let room_id = new_room_id();
         let host = Player::participant(owner_id.clone(), player_name);
-        let room = GameRoom::new(room_id.clone(), name, rules.unwrap_or_default(), host)
-            .map_err(|e| e.to_string())?;
+        let room = GameRoom::new(
+            room_id.clone(),
+            room_name.to_owned(),
+            rules.unwrap_or_default(),
+            host,
+        )
+        .map_err(|e| e.to_string())?;
 
         let mut messages = OutboundMessages::new();
         if let Some(previous) = self.player_rooms.get(owner_id).cloned() {
@@ -158,7 +175,7 @@ impl RoomManager {
             .player_names
             .get(player_id)
             .cloned()
-            .unwrap_or_else(|| "player".to_owned());
+            .unwrap_or_else(|| player_id.as_str().to_owned());
         let player = match role {
             PlayerRole::Participant => Player::participant(player_id.clone(), player_name),
             PlayerRole::Spectator => Player::spectator(player_id.clone(), player_name),
@@ -349,20 +366,17 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_room_names_require_the_room_id() {
+    fn duplicate_room_names_are_rejected() {
         let mut manager = RoomManager::default();
         manager
             .create_room(&PlayerId::new("host-one"), "testroom".to_owned(), None)
             .unwrap();
-        manager
-            .create_room(&PlayerId::new("host-two"), "testroom".to_owned(), None)
-            .unwrap();
 
         let err = manager
-            .join_room(&PlayerId::new("guest"), &RoomId::new("testroom"))
+            .create_room(&PlayerId::new("host-two"), "TestRoom".to_owned(), None)
             .unwrap_err();
 
-        assert!(err.contains("multiple rooms named testroom"));
+        assert_eq!(err, "room name already exists: TestRoom");
     }
     #[test]
     fn can_spectate_a_full_room_by_exact_name() {

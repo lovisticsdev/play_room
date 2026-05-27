@@ -100,11 +100,19 @@ impl GameRoom {
         if self.phase == RoomPhase::Finished {
             return Err(CoreError::RoomFinished);
         }
-        if player.name.trim().is_empty() {
+        let player_name = player.name.trim();
+        if player_name.is_empty() {
             return Err(CoreError::EmptyName);
         }
         if self.players.contains_key(&player.id) {
             return Err(CoreError::AlreadyInRoom);
+        }
+        if self
+            .players
+            .values()
+            .any(|existing| existing.name.trim().eq_ignore_ascii_case(player_name))
+        {
+            return Err(CoreError::DuplicatePlayerName(player_name.to_owned()));
         }
         if player.role == PlayerRole::Spectator && !self.rules.allow_spectators {
             return Err(CoreError::SpectatorsNotAllowed);
@@ -418,6 +426,7 @@ impl GameRoom {
         let mut scores: Vec<PlayerScore> = self
             .players
             .values()
+            .filter(|p| p.role == PlayerRole::Participant)
             .map(|p| PlayerScore {
                 player_id: p.id.clone(),
                 name: p.name.clone(),
@@ -471,5 +480,53 @@ impl GameRoom {
             players,
             scoreboard: self.scoreboard(),
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scoreboard_excludes_spectators_but_keeps_disconnected_participants() {
+        let host_id = PlayerId::new("host");
+        let guest_id = PlayerId::new("guest");
+        let spectator_id = PlayerId::new("spectator");
+        let host = Player::participant(host_id.clone(), "Host");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+
+        room.apply(RoomCommand::Join {
+            player: Player::participant(guest_id.clone(), "Guest"),
+        })
+        .unwrap();
+        room.apply(RoomCommand::Join {
+            player: Player::spectator(spectator_id.clone(), "Spectator"),
+        })
+        .unwrap();
+        room.apply(RoomCommand::Disconnect {
+            player_id: guest_id.clone(),
+        })
+        .unwrap();
+
+        let scores = room.scoreboard();
+
+        assert!(scores.iter().any(|score| score.player_id == host_id));
+        assert!(scores.iter().any(|score| score.player_id == guest_id));
+        assert!(!scores.iter().any(|score| score.player_id == spectator_id));
+    }
+
+    #[test]
+    fn duplicate_player_names_are_rejected_within_a_room() {
+        let host = Player::participant(PlayerId::new("host"), "Alex");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+
+        let err = room
+            .apply(RoomCommand::Join {
+                player: Player::participant(PlayerId::new("guest"), "alex"),
+            })
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::DuplicatePlayerName("alex".to_owned()));
     }
 }

@@ -23,3 +23,5 @@
 /web/node_modules/
 /web/dist/
 /web/.vite/
+
+/package-lock.json

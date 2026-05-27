@@ -22,6 +22,9 @@ pub enum CoreError {
     #[error("player is already in room")]
     AlreadyInRoom,
 
+    #[error("player name already exists in this room: {0}")]
+    DuplicatePlayerName(String),
+
     #[error("spectators are not allowed in this room")]
     SpectatorsNotAllowed,
 
