@@ -1,0 +1,862 @@
+{
+  "exported_at": "2026-05-26T17:41:04.942Z",
+  "username": "lovisticsdev",
+  "repo_count": 42,
+  "repos": [
+    {
+      "name": "play_room",
+      "full_name": "lovisticsdev/play_room",
+      "description": "A Rust async multiplayer game-room server.",
+      "html_url": "https://github.com/lovisticsdev/play_room",
+      "language": "Rust",
+      "languages": {
+        "Rust": 92610,
+        "Svelte": 17345,
+        "TypeScript": 13057,
+        "Shell": 2965,
+        "PowerShell": 2092,
+        "CSS": 1699,
+        "HTML": 294
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-26T13:20:41Z",
+      "updated_at": "2026-05-26T17:27:58Z",
+      "pushed_at": "2026-05-26T17:27:53Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 5684,
+        "content": "# Play Room\n\nPlay Room is a Rust workspace for a reconnectable multiplayer game room system. It includes deterministic Rock Paper Scissors / Rock Paper Scissors Lizard Spock game logic, an async server, a terminal client, a Svelte browser client, scripted test helpers, and integration tests for the main gameplay flows.\n\nThe project is split by responsibility so the game rules stay deterministic and testable while the server owns sockets, sessions, broadcasts, reconnect tokens, and timers.\n\n## Features\n\n- Shared server port for TCP JSON-lines clients and browser WebSocket clients\n- Terminal client with room, ready, move, spectator, and reconnect commands\n- Svelte + TypeScript web client for real-time room and game visualization\n- Deterministic core room state machine\n- Participant-aware room flow with players and spectators\n- Timed rounds and timeout resolution\n- Reconnect tokens for client sessions\n- RPS and RPSLS move support\n- Workspace integration tests and executable scripted fixtures\n- Warning-clean Rust checks with clippy warnings denied\n\n## Workspace Layout\n\n```text\nplay_room/\n|-- crates/\n|   |-- play-room-core/      # Pure game rules, room state, commands, events\n|   |-- play-room-protocol/  # Request, response, event, and JSON codec types\n|   |-- play-room-server/    # Async TCP/WebSocket server, timers, broadcasts\n|   |-- play-room-client/    # Terminal client runtime and command parser\n|   `-- play-room-testkit/   # Scripted scenario and test helper utilities\n|-- web/                     # Svelte browser client\n|-- docs/                    # Architecture, protocol, state-machine, testing notes\n|-- examples/                # Server config and executable scripted client fixtures\n|-- scripts/                 # Convenience run scripts\n|-- tests/                   # Workspace integration tests\n|   `-- common/              # Shared integration-test helpers\n|-- Cargo.toml\n|-- Cargo.lock\n`-- README.md\n```\n\n## Requirements\n\n- Rust stable toolchain\n- Node.js 18+ for the browser client\n- PowerShell, Bash, or any shell capable of running Cargo and npm commands\n\n## Quick Start\n\nRun the Rust test suite first:\n\n```bash\ncargo test --workspace\n```\n\nStart the server:\n\n```bash\ncargo run -p play-room-server -- --config examples/server.toml\n```\n\nThe default server config listens on:\n\n```text\n127.0.0.1:7878\n```\n\nStart two terminal clients in separate terminals:\n\n```bash\ncargo run -p play-room-client -- --name alice\ncargo run -p play-room-client -- --name bob\n```\n\nHelper scripts are also available:\n\n```powershell\n.\\scripts\\run-server.ps1\n.\\scripts\\run-client.ps1 -Name alice\n.\\scripts\\run-client.ps1 -Name bob\n.\\scripts\\run-web.ps1\n```\n\n```bash\nbash scripts/run-server.sh\nbash scripts/run-client.sh alice\nbash scripts/run-client.sh bob\nbash scripts/run-web.sh\n```\n\nSee [scripts/README.md](scripts/README.md) for options.\n\nTo run the browser client:\n\n```bash\ncd web\nnpm install\nnpm run dev\n```\n\nOpen:\n\n```text\nhttp://127.0.0.1:5173\n```\n\nThe browser client connects to the server through WebSocket at:\n\n```text\nws://127.0.0.1:7878/ws\n```\n\n## Gameplay Walkthrough\n\nIn Alice:\n\n```text\n/create testroom\n/ready\n```\n\nIn Bob:\n\n```text\n/rooms\n/join testroom\n/ready\n```\n\nThen submit moves from each client:\n\n```text\n/move rock\n/move scissors\n```\n\nThe server broadcasts room events and authoritative snapshots as the match progresses. Room names are accepted when they are unique; if names collide, use the generated room ID from `/rooms`.\n\n## Client Commands\n\n```text\n/help                       show available commands\n/rooms                      list active rooms\n/create <room name>         create and join a room as host\n/join <room_id|room_name>   join an existing room by ID or exact name\n/leave                      leave the current room\n/ready                      mark yourself ready\n/unready                    clear your ready state\n/move <move>                submit rock, paper, scissors, lizard, or spock\n/spectate [room_id|room_name] join a room as spectator, or switch current role\n/play                       switch current room role back to participant\n/ping                       send a health check request\n/quit                       disconnect the client\n```\n\n## Protocol\n\nThe same JSON envelope is available through two transports:\n\n- TCP clients send newline-delimited JSON.\n- Browser clients send JSON in WebSocket text frames.\n\nEach client request includes a numeric `request_id`; server messages are responses, room events, or room snapshots. Clients should treat snapshots as authoritative.\n\nSee [docs/protocol.md](docs/protocol.md) for message examples.\n\n## Architecture Notes\n\n`play-room-core` has no sockets, async runtime, filesystem access, or protocol encoding. It accepts room commands and returns domain events. The server converts client requests into core commands, applies them through the state machine, and broadcasts events plus snapshots to connected clients.\n\nMore detail:\n\n- [docs/architecture.md](docs/architecture.md)\n- [docs/state-machine.md](docs/state-machine.md)\n- [docs/testing.md](docs/testing.md)\n\n## Quality Checks\n\nBefore pushing, run:\n\n```bash\ncargo fmt --all --check\ncargo clippy --workspace --all-targets -- -D warnings\ncargo test --workspace\n```\n\nFor the web client, run:\n\n```bash\ncd web\nnpm run check\nnpm run build\n```\n\nThe integration suite covers protocol round-trips, two-player matches, spectator restrictions, reconnect flow, timeout resolution, and every JSON fixture in `examples/scripted_clients/`.\n\n## Repository Notes\n\n`Cargo.lock` is committed because this workspace includes runnable binaries. Build output, local runtime files, logs, package installs, and editor metadata are ignored.\n"
+      }
+    },
+    {
+      "name": "lovisticsdev",
+      "full_name": "lovisticsdev/lovisticsdev",
+      "description": null,
+      "html_url": "https://github.com/lovisticsdev/lovisticsdev",
+      "language": null,
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-22T06:05:46Z",
+      "updated_at": "2026-05-25T12:27:44Z",
+      "pushed_at": "2026-05-25T12:27:41Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 1737,
+        "content": "<div align=\"center\">\n\n# Lovice Ochieng\n\n<img\n  src=\"https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=500&size=16&duration=2400&pause=1400&color=38BDF8&center=true&vCenter=true&width=500&prefix=%2F%2F+&lines=Full-stack+engineer,AI+%2F+ML,Mobile,Systems,Security\"\n  alt=\"Typing animation\"\n/>\n\n<p>I build with clean architecture, reproducible workflows, and security-aware design.</p>\n\n<a href=\"https://x.com/lovisticsdev\"><img src=\"https://img.shields.io/badge/X-0B1020?style=flat-square&logo=x&logoColor=white\" /></a>\n<a href=\"https://www.linkedin.com/in/lovisticsdev\"><img src=\"https://img.shields.io/badge/LinkedIn-0B1020?style=flat-square&logo=linkedin&logoColor=0A66C2\" /></a>\n<a href=\"https://www.instagram.com/lovisticsdev\"><img src=\"https://img.shields.io/badge/Instagram-0B1020?style=flat-square&logo=instagram&logoColor=E4405F\" /></a>\n<a href=\"https://www.tiktok.com/@lovisticsdev\"><img src=\"https://img.shields.io/badge/TikTok-0B1020?style=flat-square&logo=tiktok&logoColor=white\" /></a>\n<a href=\"https://www.facebook.com/lovisticsdev\"><img src=\"https://img.shields.io/badge/Facebook-0B1020?style=flat-square&logo=facebook&logoColor=1877F2\" /></a>\n\n</div>\n\n---\n\n| Area | Skills |\n|:---|:---|\n| **Full-stack** | REST API design, authentication, persistence, frontend clients, service architecture |\n| **AI / ML** | Model training and evaluation, classification, inference APIs, data pipelines, applied ML integration |\n| **Mobile** | Native Android, Kotlin/Compose, Flutter, offline-first design |\n| **Systems** | C/C++, sockets, memory management, concurrency, compression, low-level runtimes |\n| **Security** | Identity infrastructure, authorization models, actor-context resolution, audit evidence, JWT |\n\n---\n"
+      }
+    },
+    {
+      "name": "multilabel_image_classifier_web",
+      "full_name": "lovisticsdev/multilabel_image_classifier_web",
+      "description": "A training and inference system for multi-label object classification.",
+      "html_url": "https://github.com/lovisticsdev/multilabel_image_classifier_web",
+      "language": "Python",
+      "languages": {
+        "Python": 56238,
+        "TypeScript": 20404,
+        "Jupyter Notebook": 17856,
+        "CSS": 10648,
+        "HTML": 413,
+        "JavaScript": 393
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-21T14:22:01Z",
+      "updated_at": "2026-05-22T05:53:43Z",
+      "pushed_at": "2026-05-22T05:53:39Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 8243,
+        "content": "# Multi-Label Image Classifier Web\n\nA training and inference system for multi-label object classification. The project has two connected workflows:\n\n1. **Training/export**: train an EfficientNet classifier on VOC-style multi-label image annotations, evaluate it, tune thresholds, and export a reusable model artifact.\n2. **Web inference**: users upload an image through a React frontend and receive predicted labels with confidence scores from a FastAPI backend.\n\nThe default class set is the full 20-class Pascal VOC label set:\n\n```text\naeroplane, bicycle, bird, boat, bottle, bus, car, cat, chair, cow,\ndiningtable, dog, horse, motorbike, person, pottedplant, sheep, sofa, train, tvmonitor\n```\n\n## Project layout\n\n```text\nmultilabel-image-classifier-web/\n├── backend/        # FastAPI inference API\n├── frontend/       # React/Vite upload + prediction UI\n├── src/            # Reusable ML package\n├── scripts/        # train/evaluate/predict/export/inspect/dataset prep entrypoints\n├── configs/        # YAML training configs\n├── notebooks/      # Colab launcher notebook\n├── checkpoints/    # exported model artifacts; ignored except .gitkeep\n├── outputs/        # training reports/plots; ignored except .gitkeep\n├── sample_images/  # optional local samples; ignored except .gitkeep\n├── raw/            # local raw datasets; ignored\n├── data/           # local processed datasets; ignored\n├── tests/          # package tests\n└── docs/           # architecture and usage docs\n```\n\n## Runtime split\n\nUse your laptop for lightweight tasks and the web app. Use Colab GPU for real training.\n\n```text\nLaptop:\n  prepare/inspect dataset\n  run FastAPI backend\n  run React frontend\n  run small smoke tests\n\nColab GPU:\n  train EfficientNet\n  evaluate\n  tune thresholds\n  export model artifact\n\nLaptop again:\n  copy checkpoints/exported/model.pt and metadata.json back into checkpoints/exported/\n  run the inference web app\n```\n\nCPU training on a laptop is possible but slow. For real VOC20 training, use Colab GPU.\n\n## Install\n\n```bash\npython -m venv .venv\n```\n\nWindows PowerShell:\n\n```powershell\n.venv\\Scripts\\activate\npip install -e \".[dev,train]\"\n```\n\nmacOS/Linux:\n\n```bash\nsource .venv/bin/activate\npip install -e \".[dev,train]\"\n```\n\nFor CUDA-specific PyTorch builds, use the official PyTorch install selector when needed. The package does not force a single CUDA build because local and Colab environments differ.\n\n## Prepare VOC2012 dataset\n\nThis project expects VOC-style processed data with image folders and multi-label CSV files. If you downloaded:\n\n```text\nraw/VOCtrainval_11-May-2012.tar\n```\n\nrun:\n\n```powershell\npython scripts/prepare_voc2012.py\n```\n\nExpected output:\n\n```text\ndata/voc2012_processed/\n├── train/\n│   └── images/\n├── val/\n│   └── images/\n├── train_annotations.csv\n└── val_annotations.csv\n```\n\nThe generated CSV files include all 20 Pascal VOC classes as binary columns.\n\nIf you want to save disk space on Windows, try hardlinks:\n\n```powershell\npython scripts/prepare_voc2012.py --file-mode hardlink\n```\n\nUse relative paths in `configs/voc20.yaml`:\n\n```yaml\ndataset:\n  train_images: data/voc2012_processed/train/images\n  val_images: data/voc2012_processed/val/images\n  train_annotations: data/voc2012_processed/train_annotations.csv\n  val_annotations: data/voc2012_processed/val_annotations.csv\n  image_name_column: image_name\n  class_mode: all\n```\n\nInspect the prepared dataset:\n\n```powershell\npython scripts/inspect_dataset.py --config configs/voc20.yaml\n```\n\nYou can also inspect the legacy 8-class config:\n\n```powershell\npython scripts/inspect_dataset.py --config configs/voc8_legacy.yaml\n```\n\n## Train\n\nAfter preparing the dataset and checking `configs/voc20.yaml`, run:\n\n```powershell\npython scripts/train.py --config configs/voc20.yaml\n```\n\nTraining writes checkpoints and reports under:\n\n```text\ncheckpoints/\noutputs/\n```\n\nThe training pipeline supports:\n\n- full 20-class VOC training by default\n- EfficientNet model factory\n- BCE-with-logits multi-label loss\n- class imbalance support through positive weights where configured\n- macro/micro/per-class metrics\n- per-class threshold tuning\n- exported inference metadata\n\n## Evaluate\n\n```powershell\npython scripts/evaluate.py --config configs/voc20.yaml\n```\n\nEvaluation reports per-class metrics and aggregate metrics. Multi-label accuracy can be misleading on imbalanced datasets, so macro F1, micro F1, precision, recall, and per-class F1 are more important.\n\n## Export model artifact\n\nThe inference web app should load an exported artifact, not just a bare checkpoint.\n\nExpected artifact:\n\n```text\ncheckpoints/exported/model.pt\ncheckpoints/exported/metadata.json\n```\n\nManual export:\n\n```powershell\npython scripts/export_model.py --config configs/voc20.yaml --checkpoint checkpoints/best_model.pt --output-dir checkpoints/exported\n```\n\nThe metadata file stores:\n\n```text\nclass order\nimage size\nnormalization mean/std\narchitecture name\nper-class thresholds\nvalidation metrics\n```\n\nThis prevents class-order and preprocessing mismatches during inference.\n\n## Run backend\n\n```powershell\ncopy .env.example .env\npython -m uvicorn app.main:app --app-dir backend --reload\n```\n\nOn macOS/Linux:\n\n```bash\ncp .env.example .env\npython -m uvicorn app.main:app --app-dir backend --reload\n```\n\nBackend endpoints:\n\n```text\nGET  /health\nGET  /api/model\nPOST /api/predict\n```\n\nIf no exported model exists, `/api/model` and `/api/predict` return a clear model-not-available response instead of fake predictions.\n\n## Run frontend\n\n```powershell\ncd frontend\nnpm install\nnpm run typecheck\nnpm run build\nnpm run dev\n```\n\nOpen:\n\n```text\nhttp://127.0.0.1:5173\n```\n\nThe frontend supports:\n\n- image upload\n- local image preview\n- predicted labels above threshold\n- all 20 class confidence bars\n- model metadata display\n- clear errors for missing model artifacts or invalid images\n\n## Colab training\n\nUse:\n\n```text\nnotebooks/colab_training_launcher.ipynb\n```\n\nThe notebook should be a launcher only. The training logic lives in `src/` and `scripts/`.\n\nRecommended Colab flow:\n\n```text\n1. Mount Google Drive.\n2. Clone this repo.\n3. Install package dependencies.\n4. Point config paths to the dataset in Drive.\n5. Run scripts/train.py.\n6. Run evaluation/export.\n7. Save checkpoints/exported/model.pt and metadata.json to Drive.\n8. Copy the exported artifact back to your laptop project.\n```\n\nColab cannot directly read your laptop's `C:\\...` paths. Upload the processed dataset or raw tar to Google Drive, or prepare the dataset inside Colab from the tar.\n\n## Dataset CSV format\n\nRequired columns:\n\n```csv\nimage_name,aeroplane,bicycle,bird,boat,bottle,bus,car,cat,chair,cow,diningtable,dog,horse,motorbike,person,pottedplant,sheep,sofa,train,tvmonitor\n```\n\nEach class column must contain `0` or `1`.\n\nExample:\n\n```csv\nimage_name,aeroplane,bicycle,bird,boat,bottle,bus,car,cat,chair,cow,diningtable,dog,horse,motorbike,person,pottedplant,sheep,sofa,train,tvmonitor\n2007_000033.jpg,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0\n```\n\n## Git hygiene\n\nDo not commit raw datasets, processed images, checkpoints, exported models, local `.env` files, caches, virtual environments, or frontend build outputs. The `.gitignore` is configured for this.\n\nImportant ignored paths:\n\n```text\nraw/\ndata/\ncheckpoints/*\noutputs/*\nnode_modules/\nfrontend/dist/\n.venv/\n.env\n.pytest_cache/\n```\n\nThe `.gitkeep` files preserve empty folders without committing heavy artifacts.\n\n## Quality checks\n\nPython:\n\n```powershell\npython -m compileall backend src scripts tests\npytest\nruff check .\n```\n\nFrontend:\n\n```powershell\ncd frontend\nnpm run typecheck\nnpm run build\nnpm audit\n```\n\n## Design notes\n\n- The project includes all 20 Pascal VOC classes by default.\n- `configs/voc8_legacy.yaml` preserves the original 8-class experiment.\n- The notebook is no longer the main training implementation.\n- `torch_xla` should remain optional and only be imported when TPU mode is explicitly requested.\n- The web app uses model metadata for class order, preprocessing, and thresholds.\n- The inference API is synchronous because EfficientNet prediction is fast enough for normal uploads.\n\n## License\n\nMIT License. See `LICENSE`.\n"
+      }
+    },
+    {
+      "name": "pose_guided_animal_avatar_generator",
+      "full_name": "lovisticsdev/pose_guided_animal_avatar_generator",
+      "description": "A FastAPI + React + worker architecture for animal-inspired avatar generation.",
+      "html_url": "https://github.com/lovisticsdev/pose_guided_animal_avatar_generator",
+      "language": "Python",
+      "languages": {
+        "Python": 114434,
+        "TypeScript": 30045,
+        "Jupyter Notebook": 7238,
+        "CSS": 6938,
+        "Mako": 468,
+        "JavaScript": 366,
+        "HTML": 284
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-20T17:22:17Z",
+      "updated_at": "2026-05-21T09:11:07Z",
+      "pushed_at": "2026-05-21T09:11:03Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 2118,
+        "content": "# Pose-Guided Animal Avatar Generator\n\nA FastAPI + React + worker application for image-upload jobs that generate animal-inspired avatars. The backend stores uploads, jobs, and result metadata; a worker performs Gemini concept generation and either mock, local diffusion, or Colab ControlNet generation.\n\n## Current architecture\n\n- `backend/`: FastAPI API, SQLite persistence, Alembic migrations, upload/job/result APIs, worker-token endpoints.\n- `frontend/`: Vite/React UI for upload, deduplicated job creation, polling, result history, and artifact gallery.\n- `worker/`: polling worker for Gemini concept mapping and image generation.\n- `shared/`: shared Pydantic concept schemas used by backend and worker.\n- `notebooks/`: Colab worker launcher. The notebook is only a launcher, not the application.\n\n## Deduplication\n\nThe app uses content-addressed behavior:\n\n- Same image bytes reuse the existing uploaded file regardless of filename.\n- Same image bytes + same normalized options + same pipeline versions reuse an existing queued/running/completed job.\n- Disable reuse from the UI when you intentionally want a fresh generation.\n\nThis prevents duplicate input storage and avoids repeat Gemini/ControlNet costs.\n\n## Local mock development\n\n```powershell\npython -m venv .venv\n.venv\\Scripts\\activate\npip install -e \".[dev,worker]\"\ncp .env.example .env\nalembic -c backend/alembic.ini upgrade head\npython scripts/run_backend.py\n```\n\nIn another terminal:\n\n```powershell\ncd frontend\nnpm install\nnpm run dev\n```\n\nOptional local mock worker:\n\n```powershell\n.venv\\Scripts\\activate\npython scripts/run_worker_local.py\n```\n\n## Colab ControlNet worker\n\nRun backend and frontend locally, expose backend through Cloudflare Tunnel or ngrok, then open `notebooks/colab_worker_launcher.ipynb`. The notebook verifies GPU, installs worker dependencies, tests `/api/worker/health`, and launches the worker.\n\nDo not hardcode secrets in the notebook. Use the prompts for `WORKER_TOKEN` and `GEMINI_API_KEY`.\n\n## Reset development storage\n\n```powershell\npython scripts/reset_dev_storage.py\nalembic -c backend/alembic.ini upgrade head\n```\n"
+      }
+    },
+    {
+      "name": "hoopsense",
+      "full_name": "lovisticsdev/hoopsense",
+      "description": "A kotlin/native Android NBA forecast app powered by a Python-generated daily JSON feed.",
+      "html_url": "https://github.com/lovisticsdev/hoopsense",
+      "language": "Python",
+      "languages": {
+        "Python": 94160,
+        "Kotlin": 69992,
+        "Shell": 1998
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-03-20T07:05:02Z",
+      "updated_at": "2026-05-21T07:08:45Z",
+      "pushed_at": "2026-05-21T07:08:41Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 2014,
+        "content": "# HoopSense\n\nHoopSense is a native Android NBA forecast app powered by a Python-generated daily JSON feed.\n\nThe project has two main parts:\n\n- `scripts/`: fetches NBA data, computes model forecasts, grades history, validates output, and writes public JSON.\n- `app/`: Android/Jetpack Compose client that fetches the generated feed, caches it locally, and displays forecasts/history.\n\nHoopSense is framed as an analytics/forecasting tool. It does not process wagers, connect to sportsbooks, or provide financial advice.\n\n## Project layout\n\n```text\napp/       Android client\ndata/      generated public JSON feed and local cache placeholders\nscripts/   Python data pipeline and tests\nschema/    JSON schemas for generated feed files\ndocs/      architecture, model, and operating notes\n```\n\n## Android app\n\nFrom the repository root:\n\n```bash\n./gradlew :app:assembleDebug\n```\n\nThe app fetches `data/nba_daily.json` through a configurable `BuildConfig.HOOPSENSE_DATA_URL` value. Debug builds default to the GitHub raw feed.\n\n## Python pipeline\n\nCreate a Python virtual environment and install dependencies:\n\n```bash\ncd scripts\npython -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt\n```\n\nCreate `scripts/.env` with:\n\n```env\nBDL_API_KEY=your_balldontlie_api_key\n```\n\nGenerate and validate the daily feed:\n\n```bash\npython generate_picks.py --force\npython validate_output.py\n```\n\nRun tests:\n\n```bash\ncd scripts\npytest\n```\n\n## Daily automation\n\n```bash\nscripts/run_daily.sh --dry-run\nscripts/run_daily.sh --force\n```\n\nThe automation stages only the public generated files:\n\n```text\ndata/nba_daily.json\ndata/history_slips.json\n```\n\nIt intentionally does not run `git add .`.\n\n## Data and model notes\n\nThe model is deterministic and explainable, but its confidence labels are heuristic until calibrated against historical outcomes. Backfilled historical slips are marked with `backfilled=true` and are excluded from the primary Android accuracy record.\n\nSee `docs/model.md` and `docs/data-pipeline.md`.\n"
+      }
+    },
+    {
+      "name": "face_verification",
+      "full_name": "lovisticsdev/face_verification",
+      "description": "Binary face-pair verification",
+      "html_url": "https://github.com/lovisticsdev/face_verification",
+      "language": "Python",
+      "languages": {
+        "Python": 9740
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-20T09:09:08Z",
+      "updated_at": "2026-05-20T09:14:08Z",
+      "pushed_at": "2026-05-20T09:14:03Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 2019,
+        "content": "# Face Verification\n\nA Python machine learning project for binary face-pair verification. The pipeline normalizes face images, augments positive training pairs, reduces dimensionality with PCA, and trains an RBF-kernel SVM for same-person versus different-person classification.\n\n## Contents\n\n```text\nFace Verification/\n|-- train.py                 # Training, augmentation, model selection, and plot generation\n|-- evaluate.py              # Evaluation script for the saved model\n|-- model.joblib             # Saved model artifact: SVM, scaler, and PCA\n|-- confusion_matrix.png     # Training holdout confusion matrix\n|-- validation_scores.png    # PCA validation comparison plot\n|-- data/\n|   `-- eval1.joblib         # Local evaluation dataset, ignored by Git\n|-- requirements.txt\n|-- .gitignore\n`-- README.md\n```\n\n## Requirements\n\nThe saved model was serialized with scikit-learn 1.5.1. For the cleanest reproduction, use Python 3.10-3.12 with the dependencies in `requirements.txt`.\n\n```powershell\npython -m venv .venv\n.\\.venv\\Scripts\\activate\npip install -r requirements.txt\n```\n\n## Training\n\nPlace the training dataset at `train.joblib`, then run:\n\n```powershell\npython train.py train.joblib model.joblib\n```\n\nTraining performs:\n\n- per-face pixel normalization\n- positive-pair augmentation using small rotations and blur\n- PCA component selection\n- SVM hyperparameter search with balanced accuracy\n- final model export to `model.joblib`\n- generation of `validation_scores.png` and `confusion_matrix.png`\n\n## Evaluation\n\nPlace the evaluation dataset at `data/eval1.joblib`, then run:\n\n```powershell\npython evaluate.py model.joblib\n```\n\nThe evaluator loads the saved SVM, scaler, and PCA objects from `model.joblib` and applies the same normalization path used during training.\n\n## Git Notes\n\nLarge local datasets and temporary serialized artifacts are ignored by Git. The trained `model.joblib` is intentionally kept as the main deliverable artifact, while `train.joblib` and `data/*.joblib` remain local inputs."
+      }
+    },
+    {
+      "name": "carebridge",
+      "full_name": "lovisticsdev/carebridge",
+      "description": "Full-stack hospital operations platform with Spring Boot, Angular, and REST APIs.",
+      "html_url": "https://github.com/lovisticsdev/carebridge",
+      "language": "Java",
+      "languages": {
+        "Java": 33296,
+        "TypeScript": 24816,
+        "HTML": 16937,
+        "CSS": 16583,
+        "PowerShell": 274,
+        "Shell": 204
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-20T08:11:47Z",
+      "updated_at": "2026-05-20T08:55:09Z",
+      "pushed_at": "2026-05-20T08:55:05Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3747,
+        "content": "# Hospital Management System\n\nA full-stack hospital management application with a Spring Boot REST API and an Angular frontend. The app supports local authentication, patient management, appointment management, protected dashboard routes, and a seeded development account for quick testing.\n\n## Stack\n\n- Backend: Java 21, Spring Boot 3.4, Spring Security, Spring Data JPA, H2, Maven Wrapper\n- Frontend: Angular 19, standalone components, Angular Router, HttpClient\n- Local database: file-backed H2 under `hospital-backend/data/`\n\n## Project Structure\n\n```text\ncarebridge/\n|-- hospital-backend/\n|   |-- src/main/java/com/hospital/\n|   |   |-- controller/\n|   |   |-- dto/\n|   |   |-- exception/\n|   |   |-- model/\n|   |   |-- repository/\n|   |   |-- security/\n|   |   `-- service/\n|   |-- src/main/resources/\n|   |   |-- application.properties\n|   |   `-- data.sql\n|   |-- src/test/\n|   |-- mvnw\n|   |-- mvnw.cmd\n|   `-- pom.xml\n|-- hospital-frontend/\n|   |-- src/app/components/\n|   |-- src/app/services/\n|   |-- src/app/guards/\n|   |-- src/app/models/\n|   |-- src/environments/environment.ts\n|   |-- angular.json\n|   `-- package.json\n|-- scripts/\n|-- .gitignore\n`-- README.md\n```\n\n## Default Development Account\n\nThe backend seeds one local doctor account from `hospital-backend/src/main/resources/data.sql`:\n\n```text\nusername: doctor\npassword: P@ssword123\n```\n\nUse this only for local development and replace seed data before deployment.\n\n## Backend Setup\n\n```bash\ncd hospital-backend\n./mvnw spring-boot:run\n```\n\nPowerShell:\n\n```powershell\ncd hospital-backend\n.\\mvnw.cmd spring-boot:run\n```\n\nThe API runs at:\n\n```text\nhttp://localhost:8080\n```\n\nPublic endpoints:\n\n```text\nGET  /api/health\nPOST /api/auth/login\nPOST /api/auth/register\nGET  /actuator/health\nGET  /actuator/info\n```\n\nProtected endpoints require the bearer token returned by login:\n\n```text\nGET    /api/patients\nGET    /api/patients/{id}\nPOST   /api/patients\nPUT    /api/patients/{id}\nDELETE /api/patients/{id}\nGET    /api/appointments\nGET    /api/appointments/date/{date}\nGET    /api/appointments/patient/{patientId}\nPOST   /api/appointments\nPUT    /api/appointments/{id}\nDELETE /api/appointments/{id}\n```\n\nAuthorization header:\n\n```http\nAuthorization: Bearer <token>\n```\n\n## Frontend Setup\n\n```bash\ncd hospital-frontend\nnpm install\nnpm start\n```\n\nThe Angular app runs at:\n\n```text\nhttp://localhost:4200\n```\n\nFrontend routes:\n\n```text\n/\n/login\n/register\n/dashboard/patients\n/dashboard/appointments\n```\n\nThe API base URL is configured in `hospital-frontend/src/environments/environment.ts`.\n\n## Helper Scripts\n\nBackend:\n\n```bash\nbash scripts/run-backend.sh\n```\n\n```powershell\n.\\scripts\\run-backend.ps1\n```\n\nFrontend:\n\n```bash\nbash scripts/run-frontend.sh\n```\n\n```powershell\n.\\scripts\\run-frontend.ps1\n```\n\n## Configuration\n\nCommon backend overrides:\n\n```bash\nSERVER_PORT=8080\nAPP_CORS_ALLOWED_ORIGINS=http://localhost:4200\nSPRING_DATASOURCE_URL=jdbc:h2:file:./data/hospitaldb;AUTO_SERVER=TRUE\nSPRING_DATASOURCE_USERNAME=sa\nSPRING_DATASOURCE_PASSWORD=\nSPRING_JPA_HIBERNATE_DDL_AUTO=update\nSPRING_SQL_INIT_MODE=always\nH2_CONSOLE_ENABLED=true\nAPP_AUTH_TOKEN_TTL_MINUTES=480\n```\n\nThe H2 console is available at `/h2-console` when enabled.\n\n## Tests and Builds\n\nBackend tests:\n\n```bash\ncd hospital-backend\n./mvnw test\n```\n\nFrontend build:\n\n```bash\ncd hospital-frontend\nnpm install\nnpm run build\n```\n\nFrontend unit tests require a browser-capable Angular/Karma environment:\n\n```bash\nnpm test\n```\n\n## Notes\n\nGenerated/runtime files are intentionally ignored, including Spring `target/`, local H2 database files, Angular `node_modules/`, `dist/`, `.angular/`, logs, and editor metadata. Source files, Maven wrapper scripts/properties, Angular configuration, and seed data remain trackable.\n"
+      }
+    },
+    {
+      "name": "healthcare_api",
+      "full_name": "lovisticsdev/healthcare_api",
+      "description": "Django REST Framework API for healthcare records, including doctors, hospitals, patients, admissions, insurance providers, and healthcare analytics.",
+      "html_url": "https://github.com/lovisticsdev/healthcare_api",
+      "language": "Python",
+      "languages": {
+        "Python": 84549,
+        "HTML": 9356,
+        "Makefile": 410,
+        "CSS": 283,
+        "JavaScript": 199,
+        "Shell": 169,
+        "PowerShell": 136
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-20T07:57:25Z",
+      "updated_at": "2026-05-20T08:03:08Z",
+      "pushed_at": "2026-05-20T08:03:04Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3758,
+        "content": "# Healthcare API\n\nHealthcare API is a Django REST Framework application for managing healthcare records and analytics across doctors, hospitals, patients, admissions, and insurance providers. It includes authenticated CRUD endpoints, browsable API support, Swagger/ReDoc documentation, CSV import tooling, and focused smoke tests.\n\n## Features\n\n- Authenticated CRUD endpoints for healthcare resources.\n- Session and basic authentication through Django REST Framework.\n- Filtering, searching, ordering, throttling, and paginated responses.\n- Swagger UI at `/docs/` and ReDoc at `/redoc/`.\n- Public health check at `/api/v1/health/`.\n- System-wide statistics at `/api/v1/stats/`.\n- CSV import command for `data/healthcare_dataset.csv`.\n- Admin UI styling under `static/admin/`.\n\n## Project Structure\n\n```text\nhealthcare_api/\n|-- api/\n|   |-- management/commands/load_healthcare_data.py\n|   |-- migrations/\n|   |-- templates/\n|   |-- models.py\n|   |-- serializers.py\n|   |-- urls.py\n|   |-- views.py\n|   `-- tests.py\n|-- config/\n|   |-- settings.py\n|   |-- urls.py\n|   |-- asgi.py\n|   `-- wsgi.py\n|-- data/\n|   `-- healthcare_dataset.csv\n|-- logs/\n|   `-- .gitkeep\n|-- scripts/\n|   |-- run.ps1\n|   `-- run.sh\n|-- static/\n|-- manage.py\n|-- load_data.py\n|-- Makefile\n|-- requirements.txt\n|-- .env.example\n`-- README.md\n```\n\n## Requirements\n\n- Python 3.10+\n- SQLite for local development, configured by default\n- Dependencies listed in `requirements.txt`\n\n## Setup\n\n```bash\npython -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt\ncp .env.example .env\npython manage.py migrate\npython manage.py createsuperuser\npython manage.py runserver\n```\n\nPowerShell:\n\n```powershell\npython -m venv .venv\n.\\.venv\\Scripts\\Activate.ps1\npip install -r requirements.txt\nCopy-Item .env.example .env\npython manage.py migrate\npython manage.py createsuperuser\npython manage.py runserver\n```\n\nHelper scripts are also available:\n\n```bash\nbash scripts/run.sh\n```\n\n```powershell\n.\\scripts\\run.ps1\n```\n\n## Local URLs\n\n```text\nHome:      http://127.0.0.1:8000/\nAPI root:  http://127.0.0.1:8000/api/v1/\nSwagger:   http://127.0.0.1:8000/docs/\nReDoc:     http://127.0.0.1:8000/redoc/\nAdmin:     http://127.0.0.1:8000/admin/\nHealth:    http://127.0.0.1:8000/api/v1/health/\n```\n\n## Core Endpoints\n\n```text\n/api/v1/doctors/\n/api/v1/hospitals/\n/api/v1/patients/\n/api/v1/admissions/\n/api/v1/insurance/\n/api/v1/stats/\n/api/v1/health/\n```\n\nSelected analytics/actions:\n\n```text\n/api/v1/doctors/{id}/performance_metrics/\n/api/v1/doctors/{id}/current_patients/\n/api/v1/hospitals/{id}/statistics/\n/api/v1/hospitals/{id}/occupancy/\n/api/v1/patients/{id}/medical_history/\n/api/v1/patients/{id}/treatment_summary/\n/api/v1/admissions/analytics/\n/api/v1/admissions/bulk_discharge/\n/api/v1/insurance/{id}/claims_analysis/\n/api/v1/insurance/{id}/active_claims/\n```\n\nMost endpoints require authentication. The health check is public.\n\n## Load Sample Data\n\n```bash\npython manage.py load_healthcare_data data/healthcare_dataset.csv --limit 1000 --replace\n```\n\nThe compatibility wrapper still works:\n\n```bash\npython load_data.py data/healthcare_dataset.csv\n```\n\n## Tests\n\n```bash\npython manage.py test\n```\n\nThe tests cover model validation, public health checks, authenticated list endpoints, nested admission reads, bulk-discharge validation, and empty-database stats behavior.\n\n## Environment Variables\n\nSee `.env.example` for local defaults.\n\n```text\nDJANGO_SECRET_KEY\nDJANGO_DEBUG\nDJANGO_ALLOWED_HOSTS\nDJANGO_CORS_ALLOWED_ORIGINS\nDJANGO_SQLITE_PATH\nDJANGO_LOG_LEVEL\n```\n\n## Notes\n\n`db.sqlite3`, `.env`, logs, media uploads, collected static files, cache directories, and Python bytecode are intentionally ignored. The sample CSV in `data/` is tracked because it supports the import workflow.\n"
+      }
+    },
+    {
+      "name": "mnist",
+      "full_name": "lovisticsdev/mnist",
+      "description": "Handwritten digit recognition on the MNIST dataset.",
+      "html_url": "https://github.com/lovisticsdev/mnist",
+      "language": "Jupyter Notebook",
+      "languages": {
+        "Jupyter Notebook": 238454
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-20T06:20:35Z",
+      "updated_at": "2026-05-20T06:25:48Z",
+      "pushed_at": "2026-05-20T06:25:44Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 2191,
+        "content": "# MNIST Digit Recognition\n\nHandwritten digit recognition on the MNIST dataset. The project trains a fully connected feedforward neural network from scratch with NumPy, deliberately avoiding convolutional layers to evaluate how well direct pixel-level features perform.\n\n## Approach\n\nThe model is a two-layer feedforward neural network:\n\n- Input layer: `784` flattened pixels from each `28 x 28` image.\n- Hidden layer: `128` ReLU-activated units.\n- Output layer: `10` softmax units for digit classes `0-9`.\n- Loss: cross-entropy.\n- Optimizer: mini-batch gradient descent.\n- Batch size: `128`.\n- Learning rate: `0.1`.\n- Training length: `20` epochs.\n\nThe notebook performs IDX parsing, pixel normalization to `[0, 1]`, one-hot label encoding, train/validation splitting, training history visualization, sample prediction display, confusion-matrix plotting, and per-class accuracy reporting.\n\n## Reported Result\n\n```text\nTest accuracy: 97.60%\nTest loss:     0.0803\nErrors:        240 / 10,000\n```\n\nThe results show strongest performance on visually distinct digits such as `0` and `1`, and more frequent confusion among visually similar digits such as `8`, `9`, `3`, and `5`.\n\n## Requirements\n\n- Python 3.10+\n- Jupyter Notebook or JupyterLab\n- Dependencies listed in `requirements.txt`\n\nInstall dependencies:\n\n```bash\npython -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt\n```\n\nPowerShell:\n\n```powershell\npython -m venv .venv\n.\\.venv\\Scripts\\Activate.ps1\npip install -r requirements.txt\n```\n\n## Dataset Setup\n\nPlace the four MNIST IDX files in `data/`:\n\n```text\ndata/train-images.idx3-ubyte\ndata/train-labels.idx1-ubyte\ndata/t10k-images.idx3-ubyte\ndata/t10k-labels.idx1-ubyte\n```\n\nThe dataset files are intentionally ignored because they are downloaded data, not project source.\n\n## Run\n\nStart Jupyter from the project root:\n\n```bash\njupyter notebook source_code.ipynb\n```\n\nRun the notebook cells from top to bottom after placing the MNIST files in `data/`.\n\n## Notes\n\nThis project implements the neural network manually with NumPy rather than TensorFlow, PyTorch, or Keras. The PDF report is part of the repository; raw MNIST data and generated artifacts remain local.\n"
+      }
+    },
+    {
+      "name": "graph_adt",
+      "full_name": "lovisticsdev/graph_adt",
+      "description": "C++ directed weighted graph ADT with an interactive menu driver",
+      "html_url": "https://github.com/lovisticsdev/graph_adt",
+      "language": "C++",
+      "languages": {
+        "C++": 9875,
+        "Perl": 9840,
+        "Makefile": 708,
+        "PowerShell": 374,
+        "Shell": 71
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-20T05:56:49Z",
+      "updated_at": "2026-05-20T06:10:00Z",
+      "pushed_at": "2026-05-20T06:09:56Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 2496,
+        "content": "# Graph ADT\n\nGraph ADT is a small C++17 directed weighted graph library with an interactive menu driver and a smoke test. It loads graph data from text files, supports vertex and edge mutation, and provides breadth-first and depth-first traversal.\n\n## Features\n\n- Templated `Digraph<V, W>` class for vertex and edge-weight types.\n- Directed and bidirectional edge operations.\n- Vertex insertion, deletion, and lookup.\n- Edge insertion, deletion, and lookup.\n- Breadth-first and depth-first traversal helpers.\n- Text-file graph loading.\n- Interactive command-line driver.\n- Smoke test covering representative graph operations.\n\n## Project Structure\n\n```text\ngraph_adt/\n|-- data/\n|   `-- graph2.txt\n|-- include/\n|   |-- digraph.h\n|   |-- digraph.t\n|   `-- driverFunctions.h\n|-- src/\n|   |-- digraph.cpp\n|   |-- driver.cpp\n|   `-- driverFunctions.cpp\n|-- tests/\n|   `-- smoke.cpp\n|-- scripts/\n|   |-- run.ps1\n|   `-- run.sh\n|-- Makefile\n|-- .gitignore\n`-- README.md\n```\n\n## Requirements\n\n- `g++` with C++17 support\n- `make` for the default workflow\n\nWindows users can run the PowerShell helper script. If `make` is unavailable, it falls back to a direct `g++` build.\n\n## Build\n\n```bash\nmake\n```\n\nManual build:\n\n```bash\nmkdir -p build\ng++ -std=c++17 -Wall -Wextra -pedantic -Iinclude src/driver.cpp src/driverFunctions.cpp src/digraph.cpp -o build/graph_adt\n```\n\nPowerShell manual build:\n\n```powershell\nNew-Item -ItemType Directory -Force -Path build\ng++ -std=c++17 -Wall -Wextra -pedantic -Iinclude src/driver.cpp src/driverFunctions.cpp src/digraph.cpp -o build/graph_adt.exe\n```\n\n## Run\n\n```bash\nmake run\n```\n\nHelper scripts:\n\n```bash\nbash scripts/run.sh\n```\n\n```powershell\n.\\scripts\\run.ps1\n```\n\nWhen prompted by the menu, load the sample graph with:\n\n```text\ndata/graph2.txt\n```\n\n## Test\n\n```bash\nmake test\n```\n\nThe smoke test loads `data/graph2.txt`, checks vertex and edge lookups, validates traversal startup, deletes/restores an edge, and deletes a vertex.\n\n## Input File Format\n\nEach row defines one source vertex followed by zero or more destination/weight pairs, terminated by `#`.\n\n```text\nSource Destination1 Weight1 Destination2 Weight2 #\nIsolatedVertex #\n```\n\nExample:\n\n```text\nAtlanta Houston 650 Washington 600 #\nNewark #\n```\n\n## Notes\n\n`Digraph` is templated, so implementation code lives in `include/digraph.t` and is included from `include/digraph.h`. Some public method names preserve the original API, including `getDigraph`, `isUniEdge`, `isBiDirEdge`, and `getTwoVerticies`.\n"
+      }
+    },
+    {
+      "name": "p7coroutine",
+      "full_name": "lovisticsdev/p7coroutine",
+      "description": "A small Go-style coroutine and channel runtime in C++17.",
+      "html_url": "https://github.com/lovisticsdev/p7coroutine",
+      "language": "C++",
+      "languages": {
+        "C++": 12672,
+        "Makefile": 2349,
+        "Shell": 64,
+        "PowerShell": 58
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-20T05:09:28Z",
+      "updated_at": "2026-05-20T05:43:02Z",
+      "pushed_at": "2026-05-20T05:42:57Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3013,
+        "content": "# Coroutine Runtime\n\nA small Go-style coroutine and channel runtime implemented in C++17. It provides cooperative scheduling, user-space coroutine stacks, result channels, and unbuffered rendezvous channels for tests built around `go_main()`.\n\n## API\n\nThe public API is defined in `src/go.h`:\n\n```cpp\nChan go(std::function<Value()> func);\nChan me();\nChan chan();\nvoid send(Chan ch, Value value);\nValue receive(Chan ch);\ntemplate <typename T> T receive(Chan ch);\nvoid yield();\n[[noreturn]] void stop();\n```\n\n- `go(func)` schedules a coroutine and returns its associated result channel.\n- `me()` returns the current coroutine's result channel.\n- `chan()` creates an unbuffered channel.\n- `send()` blocks until a receiver is ready.\n- `receive()` blocks until a sender or completed coroutine value is ready.\n- `yield()` cooperatively returns control to the scheduler.\n- `stop()` runs the scheduler loop.\n\n## Project Structure\n\n```text\np7/\n|-- src/\n|   |-- go.h       # Public coroutine/channel API\n|   |-- go.cc      # Runtime implementation\n|   `-- main.cc    # Program entry point that calls go_main()\n|-- tests/\n|   |-- 01_return_channel.cc\n|   |-- 01_return_channel.ok\n|   `-- ...\n|-- scripts/\n|   |-- run-tests.ps1\n|   `-- run-tests.sh\n|-- Makefile\n|-- .gitignore\n`-- README.md\n```\n\n## Requirements\n\n- POSIX-like environment with `ucontext.h` support\n- `g++` with C++17 support\n- `make`\n- Standard Unix tools used by the Makefile: `timeout`, `diff`, and `/usr/bin/time`\n\nOn Windows, use WSL, MSYS2, or a Linux VM. Native MSVC does not provide `ucontext.h`.\n\n## Build and Test\n\nThe Makefile discovers `tests/*.cc` files. Each test file should define `go_main()` and may include a matching `.ok` file for expected output comparison.\n\nExample test shape:\n\n```cpp\n#include \"src/go.h\"\n#include <cstdio>\n\nvoid go_main() {\n    Chan c = chan();\n\n    go([c] {\n        send(c, 42);\n        return 0;\n    });\n\n    std::printf(\"%d\\n\", receive<int>(c));\n}\n```\n\nBuild the runtime objects and all discovered tests:\n\n```bash\nmake\n```\n\nRun output comparisons for discovered tests:\n\n```bash\nmake test\n```\n\nClean generated artifacts:\n\n```bash\nmake clean\n```\n\nHelper scripts wrap the same workflow:\n\n```powershell\n.\\scripts\\run-tests.ps1\n```\n\n```bash\nbash scripts/run-tests.sh\n```\n\n## Included Tests\n\n```text\ntests/01_return_channel.cc       Completed coroutine result channels\ntests/02_send_first.cc           Sender blocks until a receiver arrives\ntests/03_receive_first.cc        Receiver blocks until a sender arrives\ntests/04_yield_progress.cc       Cooperative yielding and resumed progress\ntests/05_me_and_nested_go.cc     Current coroutine channel and nested go calls\ntests/06_value_types.cc          Supported Value variant payloads\ntests/07_pipeline.cc             Multi-stage channel pipeline\ntests/08_null_channel_safety.cc  Null channel guard behavior\n```\n\n## Notes\n\nThe runtime is cooperative, not preemptive. Coroutines switch only when they call `yield()`, `send()`, `receive()`, or finish executing their function.\n"
+      }
+    },
+    {
+      "name": "welovemovies_api",
+      "full_name": "lovisticsdev/welovemovies_api",
+      "description": "Express + Knex REST API for movies, theaters, and reviews backed by PostgreSQL.",
+      "html_url": "https://github.com/lovisticsdev/welovemovies_api",
+      "language": "JavaScript",
+      "languages": {
+        "JavaScript": 38493,
+        "PowerShell": 228,
+        "Shell": 208,
+        "Dockerfile": 148
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-20T04:22:15Z",
+      "updated_at": "2026-05-20T04:39:31Z",
+      "pushed_at": "2026-05-20T04:39:27Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3848,
+        "content": "# WeLoveMovies API\n\nWeLoveMovies is an Express and Knex REST API for movies, theaters, and reviews, backed by PostgreSQL. It supports the standard WeLoveMovies route set at the root path and mirrors those routes under `/api` for clients that prefer an API namespace.\n\n## Tech Stack\n\n- Node.js 18+\n- Express\n- Knex\n- PostgreSQL\n- Jest and Supertest\n- Docker Compose\n\n## Project Structure\n\n```text\nwelovemovies/\n|-- src/\n|   |-- app.js\n|   |-- server.js\n|   |-- db/\n|   |   |-- init/\n|   |   |-- migrations/\n|   |   `-- seeds/\n|   |-- movies/\n|   |-- reviews/\n|   |-- theaters/\n|   `-- errors/\n|-- test/routes/\n|-- scripts/\n|-- docker-compose.yml\n|-- Dockerfile\n|-- knexfile.js\n|-- package.json\n|-- .env.example\n`-- README.md\n```\n\n## Requirements\n\n- Docker Desktop or Docker Engine with Docker Compose v2\n\nNode.js and PostgreSQL are not required on the host machine when using the Docker workflow.\n\n## Quick Start\n\nCreate a local environment file:\n\n```bash\ncp .env.example .env\n```\n\nPowerShell:\n\n```powershell\nCopy-Item .env.example .env\n```\n\nStart the database, run migrations and seeds, then start the API:\n\n```bash\ndocker compose build\ndocker compose up -d db\ndocker compose run --rm api npm run migrate\ndocker compose run --rm api npm run seed\ndocker compose up api\n```\n\nThe API runs at:\n\n```text\nhttp://localhost:5001\n```\n\nHealth check:\n\n```text\nGET /health\n```\n\n## Helper Scripts\n\nWindows PowerShell:\n\n```powershell\n.\\scripts\\run.ps1\n```\n\nmacOS/Linux:\n\n```bash\nsh scripts/run.sh\n```\n\nBoth scripts create `.env` from `.env.example` if needed, start PostgreSQL, run migrations and seeds, and launch the API.\n\n## Environment\n\nThe Docker workflow uses PostgreSQL through the Compose service hostname `db`:\n\n```env\nPORT=5001\nNODE_ENV=development\nLOG_FORMAT=dev\nCORS_ORIGIN=*\n\nPOSTGRES_USER=postgres\nPOSTGRES_PASSWORD=postgres\nPOSTGRES_DB=movies\nPOSTGRES_TEST_DB=movies_test\n\nDATABASE_URL=postgresql://postgres:postgres@db:5432/movies\nTEST_DATABASE_URL=postgresql://postgres:postgres@db:5432/movies_test\n```\n\nKeep `.env` local. Only `.env.example` should be committed.\n\n## Common Commands\n\n```bash\ndocker compose build                         # build the API image\ndocker compose up -d db                      # start PostgreSQL\ndocker compose run --rm api npm run migrate  # run development migrations\ndocker compose run --rm api npm run seed     # seed development data\ndocker compose up api                        # run API in the foreground\ndocker compose up -d api                     # run API in the background\ndocker compose logs -f api db                # follow service logs\ndocker compose down                          # stop containers\ndocker compose down -v                       # stop containers and remove DB volume\n```\n\nThe `package.json` file also includes Docker aliases such as `npm run docker:up`, `npm run docker:test`, and `npm run docker:down` for machines that have Node/npm installed locally.\n\n## Tests\n\nRun the route tests inside Docker:\n\n```bash\ndocker compose up -d db\ndocker compose run --rm -e NODE_ENV=test api npm run migrate:test\ndocker compose run --rm -e NODE_ENV=test api npm test\n```\n\n## API Routes\n\n```text\nGET    /\nGET    /health\nGET    /movies\nGET    /movies?is_showing=true\nGET    /movies/:movieId\nGET    /movies/:movieId/theaters\nGET    /movies/:movieId/reviews\nGET    /theaters\nPUT    /reviews/:reviewId\nDELETE /reviews/:reviewId\n```\n\nEquivalent `/api/movies`, `/api/theaters`, and `/api/reviews` routes are also available.\n\n## Notes\n\n- PostgreSQL data persists in the Docker volume `postgres_data`.\n- `node_modules` is kept out of Git and handled by Docker during container builds/runs.\n- The server does not run migrations automatically at startup; run migrations explicitly before seeding or serving.\n- To reset database state, run `docker compose down -v`, then repeat the migration and seed commands.\n"
+      }
+    },
+    {
+      "name": "RPM_agent",
+      "full_name": "lovisticsdev/RPM_agent",
+      "description": "A visual reasoning agent for solving Raven's Progressive Matrices (RPM) problems.",
+      "html_url": "https://github.com/lovisticsdev/RPM_agent",
+      "language": "Python",
+      "languages": {
+        "Python": 47307,
+        "PowerShell": 138,
+        "Shell": 116
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T18:02:11Z",
+      "updated_at": "2026-05-19T18:05:35Z",
+      "pushed_at": "2026-05-19T18:03:49Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3063,
+        "content": "# Raven's Progressive Matrices Agent\n\nA visual reasoning agent for solving Raven's Progressive Matrices (RPM) problems with the supplied KBAI-style Python harness. The grader imports `Agent` from `Agent.py` and calls `Agent.Solve(problem)` for each problem in `Problems/ProblemSetList.txt`.\n\n## Overview\n\nThe solver is implemented in `Agent.py` and works directly from the provided figure images. It converts figures into binary image masks, compares structural and pixel-level relationships, and scores answer candidates using similarity, Jaccard overlap, transformations, fill/outline behavior, component counts, and 2x2/3x3 pattern rules.\n\nNo answer-key or problem-name hardcoding is used; decisions are based on image features extracted at runtime.\n\n## Project Structure\n\n```text\nRPM-Project/\n|-- Agent.py                 # Main RPM-solving agent\n|-- RavensProject.py          # Provided project runner\n|-- RavensGrader.py           # Provided result grader\n|-- ProblemSet.py             # Provided problem-set loader\n|-- RavensFigure.py\n|-- RavensObject.py\n|-- RavensProblem.py\n|-- Problems/                 # Provided RPM problem sets and images\n|-- scripts/\n|   |-- run.ps1               # Windows runner\n|   `-- run.sh                # macOS/Linux runner\n|-- tools/\n|   `-- score_summary.py      # Compact result summary helper\n|-- requirements.txt\n|-- .gitignore\n`-- README.md\n```\n\n## Requirements\n\n- Python 3.11+\n- Dependencies listed in `requirements.txt`\n\nInstall dependencies:\n\n```bash\npython -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt\n```\n\nPowerShell:\n\n```powershell\npython -m venv .venv\n.\\.venv\\Scripts\\Activate.ps1\npip install -r requirements.txt\n```\n\n## Run\n\n```bash\npython RavensProject.py\npython tools/score_summary.py\n```\n\nPowerShell helper:\n\n```powershell\n.\\scripts\\run.ps1\n```\n\nmacOS/Linux helper:\n\n```bash\nbash scripts/run.sh\n```\n\nThe harness writes generated result files to the project root:\n\n```text\nAgentAnswers.csv\nProblemResults.csv\nSetResults.csv\n```\n\nThese outputs are ignored because each run regenerates them.\n\n## Configured Problem Sets\n\n`Problems/ProblemSetList.txt` currently runs:\n\n```text\nBasic Problems B\nBasic Problems C\nBasic Problems D\nBasic Problems E\nChallenge Problems B\nChallenge Problems C\nChallenge Problems D\nChallenge Problems E\n```\n\n## Latest Local Result\n\n```text\nBasic Problems B: 12 correct, 0 incorrect, 0 skipped\nBasic Problems C: 11 correct, 1 incorrect, 0 skipped\nBasic Problems D: 7 correct, 5 incorrect, 0 skipped\nBasic Problems E: 10 correct, 2 incorrect, 0 skipped\nChallenge Problems B: 6 correct, 6 incorrect, 0 skipped\nChallenge Problems C: 6 correct, 6 incorrect, 0 skipped\nChallenge Problems D: 8 correct, 4 incorrect, 0 skipped\nChallenge Problems E: 5 correct, 7 incorrect, 0 skipped\nTotal: 65/96 correct, 31 incorrect, 0 skipped\n```\n\n## Notes\n\nThe provided harness files are kept intact for compatibility with the assignment runner. The project-specific reasoning logic is concentrated in `Agent.py`, with `tools/score_summary.py` included only for local reporting.\n"
+      }
+    },
+    {
+      "name": "tasty_bites",
+      "full_name": "lovisticsdev/tasty_bites",
+      "description": "An ASP.NET Core MVC restaurant menu application built with .NET 8, Entity Framework Core, SQLite, and ASP.NET Core Identity.",
+      "html_url": "https://github.com/lovisticsdev/tasty_bites",
+      "language": "HTML",
+      "languages": {
+        "HTML": 42700,
+        "C#": 29610,
+        "CSS": 7202,
+        "Python": 2624,
+        "JavaScript": 2121
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T17:12:03Z",
+      "updated_at": "2026-05-19T17:14:25Z",
+      "pushed_at": "2026-05-19T17:14:18Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3346,
+        "content": "# Tasty Bites\n\nTasty Bites is an ASP.NET Core MVC restaurant menu application built with .NET 8, Entity Framework Core, SQLite, and ASP.NET Core Identity. It provides public menu browsing, authenticated menu management, account registration/login, and a small JSON API for menu data.\n\n## Features\n\n- Public home, menu, category, item details, daily special, contact, and health-check routes.\n- Identity-based registration, login, logout, profile access, lockout, and protected write actions.\n- SQLite-backed menu storage with seeded starter items.\n- Create, edit, and delete flows for authenticated users.\n- Public read API plus authenticated create/update/delete API endpoints.\n- Model validation for required fields, price range, category length, and non-vegetarian price limits.\n- Razor views, static assets, custom menu badges, and documentation screenshots.\n\n## Project Structure\n\n```text\ntasty_bites/\n├── src/\n│   └── TastyBites/\n│       ├── Controllers/\n│       ├── Data/\n│       ├── Models/\n│       ├── Services/\n│       ├── TagHelpers/\n│       ├── Views/\n│       ├── docs/\n│       └── wwwroot/\n├── tasty_bites.sln\n├── .editorconfig\n├── .gitignore\n└── README.md\n```\n\n## Requirements\n\n- .NET 8 SDK\n- Local filesystem access for the SQLite database\n\n## Run Locally\n\n```bash\ndotnet restore\ndotnet run --project src/TastyBites/TastyBites.csproj\n```\n\nOpen the URL printed by `dotnet run`, usually:\n\n```text\nhttps://localhost:7193\nhttp://localhost:5182\n```\n\nOn first run, the application creates `src/TastyBites/TastyBites.db` from the configured SQLite connection string and seeds starter menu items.\n\n## Common Routes\n\n```text\n/                         Home page\n/Menu                     Public menu\n/Menu/ShowDetails/{id}    Menu item details\n/cuisine/{category}/{id?} Category view\n/special/{day}            Daily special text\n/Account/Register         Register\n/Account/Login            Login\n/Account/Profile          Authenticated profile\n/Contact                  Contact page\n/health                   Health check\n```\n\n## API Routes\n\nPublic read endpoints:\n\n```text\nGET /api/menu-items\nGET /api/menu-items/{id}\nGET /api/menu-items/category/{category}\nGET /api/menu-items/vegetarian\n```\n\nAuthenticated write endpoints:\n\n```text\nPOST   /api/menu-items\nPUT    /api/menu-items/{id}\nDELETE /api/menu-items/{id}\n```\n\nExample create/update body:\n\n```json\n{\n  \"name\": \"Garden Risotto\",\n  \"description\": \"Creamy risotto with seasonal vegetables\",\n  \"price\": 18.50,\n  \"category\": \"Mains\",\n  \"isVegetarian\": true\n}\n```\n\n## Development Notes\n\nBuild output, Visual Studio state, local SQLite databases, logs, temp files, and user-specific project files are intentionally ignored. Source files, Razor views, static assets, documentation, and screenshots remain trackable.\n\nTo reset local data, stop the app and delete `src/TastyBites/TastyBites.db`; it will be recreated on the next run. This coursework/demo version uses `EnsureCreated()` for simple setup. For production-style development, replace that with EF Core migrations.\n\n## Documentation\n\nDetailed refinement notes are in `src/TastyBites/docs/REVIEW.md`. The longer project write-up and screenshots are in `src/TastyBites/docs/Documentation.md` and `src/TastyBites/docs/screenshots/`.\n"
+      }
+    },
+    {
+      "name": "LCS_algorithms",
+      "full_name": "lovisticsdev/LCS_algorithms",
+      "description": "Compares two implementations of the Longest Common Subsequence problem, brute force and dynamic",
+      "html_url": "https://github.com/lovisticsdev/LCS_algorithms",
+      "language": "Java",
+      "languages": {
+        "Java": 18101,
+        "PowerShell": 541,
+        "Shell": 375
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T15:42:38Z",
+      "updated_at": "2026-05-19T15:56:26Z",
+      "pushed_at": "2026-05-19T15:50:43Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3285,
+        "content": "# LCS Algorithms\n\nThis project compares two implementations of the Longest Common Subsequence problem:\n\n1. **Brute Force / Naive Recursive LCS** — exponential-time baseline used only for small input pairs.\n2. **Dynamic Programming LCS** — bottom-up tabulation approach suitable for larger input pairs.\n\nThe application is intentionally file-based. It reads one input file or every `.txt` file in an input directory, compares each unique pair of sequences, and writes formatted analysis output files.\n\n## Project structure\n\n```text\nLSC_Algorithms/\n├── src/\n│   ├── BruteForceLCS.java\n│   ├── DynamicProgrammingLCS.java\n│   ├── LCS.java\n│   └── LCSResult.java\n├── input/\n│   └── *.txt\n├── output/\n│   └── *_output.txt\n├── scripts/\n│   ├── run_all.ps1\n│   └── run_all.sh\n├── .vscode/\n│   └── settings.json\n├── .gitignore\n└── README.md\n```\n\n## Requirements\n\n- Java Development Kit 11 or newer.\n- No external libraries are required.\n\nCheck Java availability:\n\n```bash\njava -version\njavac -version\n```\n\n## Compile\n\nFrom the project root:\n\n```bash\nmkdir -p bin\njavac -d bin src/*.java\n```\n\nOn Windows PowerShell:\n\n```powershell\nNew-Item -ItemType Directory -Force bin\njavac -d bin src\\*.java\n```\n\n## Run\n\nProcess all sample input files:\n\n```bash\njava -cp bin LCS input output\n```\n\nProcess one file:\n\n```bash\njava -cp bin LCS input/required.txt output\n```\n\nEquivalent named-argument form:\n\n```bash\njava -cp bin LCS --input input --output output --brute-force-limit 35\n```\n\nPowerShell helper:\n\n```powershell\n.\\scripts\\run_all.ps1\n```\n\nBash helper:\n\n```bash\n./scripts/run_all.sh\n```\n\n## Input format\n\nEach non-empty line is treated as a sequence. Labels are optional.\n\n```text\nS1 = ACCGGTCGACTGCGCGGAAGCCGGCCGAA\nS2 = GTCGTTCGGAATGCCGTTGCTCTGTAAA\n```\n\nThe parser ignores blank lines and comments beginning with `#` or `//`.\n\n## Output behavior\n\nFor each input file, the program writes:\n\n```text\noutput/<input_file_name>_output.txt\n```\n\nEach pair includes:\n\n- labels and lengths for both strings,\n- the LCS returned by dynamic programming,\n- comparison count and execution time,\n- brute-force output when the pair is small enough,\n- a verification line when both algorithms are run.\n\n## Brute-force limit\n\nThe brute-force algorithm is exponential. By default, it is skipped when the combined length of a string pair is greater than `35`.\n\nYou can change the threshold:\n\n```bash\njava -cp bin LCS --input input --output output --brute-force-limit 40\n```\n\nSetting the threshold too high can make execution impractically slow.\n\n## Complexity\n\n| Algorithm           | Time Complexity |       Space Complexity | Notes                                                      |\n| ------------------- | --------------: | ---------------------: | ---------------------------------------------------------- |\n| Brute Force         |     Exponential | O(m+n) recursion depth | Useful only for small correctness/performance comparisons. |\n| Dynamic Programming |         O(m×n) |                O(m×n) | Suitable for larger inputs and reconstructs one valid LCS. |\n\nThe LCS string is not always unique. Two correct implementations may return different subsequences of the same maximum length.\n"
+      }
+    },
+    {
+      "name": "bankers_algorithm",
+      "full_name": "lovisticsdev/bankers_algorithm",
+      "description": "An interactive C program that models resource allocation with Banker's Algorithm.",
+      "html_url": "https://github.com/lovisticsdev/bankers_algorithm",
+      "language": "C",
+      "languages": {
+        "C": 10998
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T15:29:17Z",
+      "updated_at": "2026-05-19T15:51:49Z",
+      "pushed_at": "2026-05-19T15:30:30Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 1106,
+        "content": "# Banker's Algorithm\n\nAn interactive C program that models resource allocation with Banker's Algorithm. The program lets a user enter a claim graph, request resources, release resources, and determine whether the current allocation state has a safe process sequence.\n\n## Features\n\n- Dynamic process and resource counts\n- Resource, available, maximum-claim, allocated, and need matrices\n- Resource request handling with availability and need checks\n- Resource release handling\n- Safety-sequence calculation for deadlock avoidance\n- Interactive terminal menu\n\n## Build\n\n```bash\ngcc -std=c11 -Wall -Wextra -pedantic bankers.c -o bankers\n```\n\n## Run\n\nOn Windows:\n\n```powershell\n.\\bankers.exe\n```\n\nOn Linux/macOS:\n\n```bash\n./bankers\n```\n\n## Menu Options\n\n```text\n1  Enter claim graph\n2  Request resource\n3  Release resource\n4  Determine safe sequence\n5  Quit program\n```\n\n## Project Structure\n\n```text\nbankers.c  Main C source file\n```\n\n## Git Notes\n\nCompiled binaries, object files, logs, temporary files, editor metadata, and OS files are ignored. Track the source file, README, and repository metadata only.\n"
+      }
+    },
+    {
+      "name": "fruit_mkt_sim",
+      "full_name": "lovisticsdev/fruit_mkt_sim",
+      "description": "A Java concurrency simulation of a fruit marketplace using the producer-consumer pattern.",
+      "html_url": "https://github.com/lovisticsdev/fruit_mkt_sim",
+      "language": "Java",
+      "languages": {
+        "Java": 7837
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T15:16:20Z",
+      "updated_at": "2026-05-19T15:30:27Z",
+      "pushed_at": "2026-05-19T15:17:51Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 970,
+        "content": "# Fruit Marketplace Simulation\n\nA Java concurrency simulation of a fruit marketplace using the producer-consumer pattern. Farmers produce fruit into bounded market buffers, while customers consume specific fruit types and wait when their desired fruit is unavailable.\n\n## Features\n\n- Producer-consumer workflow implemented with `BlockingQueue`\n- Separate bounded buffers for apples, oranges, grapes, and watermelons\n- Farmer threads that wait when a fruit buffer is full\n- Customer threads that wait when a desired fruit is unavailable\n- `ExecutorService`-based task execution\n- Randomized producer delays to simulate market timing\n\n## Build\n\n```bash\njavac FruitMarketplace.java\n```\n\n## Run\n\n```bash\njava FruitMarketplace\n```\n\n## Project Structure\n\n```text\nFruitMarketplace.java  Main simulation source file\n```\n\n## Git Notes\n\nCompiled Java artifacts such as `.class` files and build directories are ignored. Track the source file, README, and repository metadata only.\n"
+      }
+    },
+    {
+      "name": "fee_sesmag",
+      "full_name": "lovisticsdev/fee_sesmag",
+      "description": "Fee SESMag is a full-stack document-analysis app with a Django REST Framework backend and a Vite/React frontend.",
+      "html_url": "https://github.com/lovisticsdev/fee_sesmag",
+      "language": "JavaScript",
+      "languages": {
+        "JavaScript": 53689,
+        "Python": 35490,
+        "CSS": 6727,
+        "HTML": 306
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T15:07:58Z",
+      "updated_at": "2026-05-19T15:19:59Z",
+      "pushed_at": "2026-05-19T15:10:35Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3249,
+        "content": "# Fee SESMag\n\nFee SESMag is a full-stack document-analysis app with a Django REST Framework backend and a Vite/React frontend. Users upload PDF documents, request a Gemini-powered inclusivity analysis from Fee's perspective, view the source PDF, inspect structured analysis results, and chat against the stored analysis context.\n\n## Features\n\n- PDF upload and API-served PDF viewing\n- Gemini-backed analysis with primary and fallback model configuration\n- Structured Fee-perspective analysis stored in SQLite during local development\n- Document-specific chat using prior analysis and recent conversation history\n- React UI with document list, upload flow, PDF viewer, analysis panels, and chat view\n- Local environment templates for backend and frontend\n\n## Project Structure\n\n```text\nbackend/                  Django project and REST API\nbackend/core/             Documents, analyses, conversations, serializers, views\nbackend/core/fee_analyzer Gemini prompts, PDF extraction, and model calls\nfrontend/                 Vite/React client\nfrontend/src/components/  Upload, PDF viewer, analysis, chat, and common UI\nfrontend/src/services/    API client configuration\npackage.json              Convenience scripts for backend/frontend tasks\n```\n\n## Requirements\n\n- Python 3.12+\n- Node.js 18+\n- A Gemini API key\n\n## Backend Setup\n\n```bash\ncd backend\npython -m venv .venv\nsource .venv/bin/activate  # Windows: .venv\\Scripts\\activate\npython -m pip install --upgrade pip\npython -m pip install -r requirements.txt\ncp .env.example .env\npython manage.py makemigrations\npython manage.py migrate\npython manage.py runserver\n```\n\nSet these in `backend/.env` before using Gemini-backed features:\n\n```env\nDJANGO_SECRET_KEY=replace-with-a-strong-secret\nGEMINI_API_KEY=your-gemini-api-key\nGEMINI_MODEL=gemini-3.1-pro-preview\nGEMINI_FALLBACK_MODELS=gemini-3.1-flash-lite\n```\n\nDefault backend URL:\n\n```text\nhttp://localhost:8000/api\n```\n\n## Frontend Setup\n\n```bash\ncd frontend\nnpm install\ncp .env.example .env\nnpm run dev\n```\n\nDefault frontend URL:\n\n```text\nhttp://localhost:5173\n```\n\nThe frontend reads the API base URL from:\n\n```env\nVITE_API_URL=http://localhost:8000/api\n```\n\n## Root Scripts\n\nFrom the repository root, these helper scripts are available:\n\n```bash\nnpm run backend:install\nnpm run backend:migrate\nnpm run backend:dev\nnpm run frontend:install\nnpm run frontend:dev\nnpm run frontend:build\n```\n\n## API Summary\n\n```text\nGET  /api/health/\nGET  /api/documents/\nPOST /api/documents/\nGET  /api/documents/{id}/\nGET  /api/documents/{id}/file/\nPOST /api/documents/{id}/analyze/\nPOST /api/documents/{id}/chat/\nGET  /api/documents/{id}/conversations/\nGET  /api/analyses/\nGET  /api/conversations/\n```\n\n## Local State\n\nThe following are local runtime files and are intentionally ignored:\n\n```text\nbackend/db.sqlite3\nbackend/media/\nbackend/staticfiles/\nbackend/.env\nfrontend/.env\nfrontend/node_modules/\nfrontend/dist/\n```\n\n## Security Notes\n\n- Do not commit `.env` files or Gemini API keys.\n- For deployment, set `DJANGO_DEBUG=False`, use a strong `DJANGO_SECRET_KEY`, restrict `DJANGO_ALLOWED_HOSTS`, restrict `CORS_ALLOWED_ORIGINS`, and use production database/storage backends.\n- Uploaded PDFs are stored locally in development; use managed storage for production.\n"
+      }
+    },
+    {
+      "name": "culigne",
+      "full_name": "lovisticsdev/culigne",
+      "description": "Culigne is a FastAPI + MongoDB service that recommends recipes from available ingredients using a TF-IDF similarity model.",
+      "html_url": "https://github.com/lovisticsdev/culigne",
+      "language": "Python",
+      "languages": {
+        "Python": 29235,
+        "Dockerfile": 820
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T12:50:59Z",
+      "updated_at": "2026-05-19T13:04:21Z",
+      "pushed_at": "2026-05-19T13:03:56Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 3820,
+        "content": "# Culigne\n\nCuligne is a FastAPI + MongoDB recipe recommender API. It loads raw recipe JSON data, stores normalized recipes in MongoDB, builds TF-IDF recommender artifacts, and serves authenticated recipe recommendations from ingredient lists.\n\n## Features\n\n- FastAPI REST API with interactive docs at `/docs`\n- MongoDB-backed recipe and API-client storage\n- HMAC-hashed API keys with one-time key display\n- TF-IDF ingredient matching with cosine similarity\n- Preprocessing script for raw recipe JSON files\n- Liveness and readiness health checks\n- Docker Compose setup for the API and MongoDB\n- Pytest coverage for preprocessing and API-key hashing helpers\n\n## Project Structure\n\n```text\napp/api/          API routers, endpoints, and dependencies\napp/core/         Runtime configuration and security helpers\napp/db/           MongoDB connection and CRUD helpers\napp/ml/           Ingredient normalization and artifact checks\napp/schemas/      Pydantic request/response models\napp/scripts/      Preprocessing and API-client creation scripts\napp/services/     Recommendation service\ndata/raw/         Local raw recipe JSON files, ignored by Git\nartifacts/        Generated TF-IDF artifacts, ignored by Git\ntests/            Pytest tests\n```\n\n## Data and Artifacts\n\nRaw recipe files are intentionally ignored because they are large local data files. Place the source JSON files in `data/raw/` before preprocessing, for example:\n\n```text\ndata/raw/recipes_raw_nosource_ar.json\ndata/raw/recipes_raw_nosource_epi.json\ndata/raw/recipes_raw_nosource_fn.json\n```\n\nGenerated recommender artifacts are written to `artifacts/`:\n\n```text\nartifacts/tfidf_vectorizer.pkl\nartifacts/tfidf_matrix.pkl\nartifacts/recipe_index_map.pkl\nartifacts/metadata.json\n```\n\nThose files are also ignored and can be regenerated with the preprocessing script.\n\n## Environment\n\nCreate a local environment file from the template:\n\n```bash\ncp .env.example .env\n```\n\nSet a strong `SECRET_KEY` value before creating API keys. Never commit `.env`.\n\n## Run with Docker\n\nStart MongoDB and the API:\n\n```bash\ndocker compose up --build\n```\n\nIn another shell, preprocess the raw data and create recommender artifacts:\n\n```bash\ndocker compose exec api python -m app.scripts.preprocess_data\n```\n\nCreate a client and API key:\n\n```bash\ndocker compose exec api python -m app.scripts.create_client \\\n  --email client@example.com \\\n  --company \"Client Company\" \\\n  --no-password\n```\n\nStore the printed API key immediately. Only its hash is saved.\n\n## Request Recommendations\n\n```bash\ncurl -X POST \"http://localhost:8000/api/v1/recipes/recommend\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"X-API-Key: YOUR_API_KEY\" \\\n  -d '{\"ingredients\":[\"chicken\",\"tomato\",\"onion\"],\"limit\":3}'\n```\n\nLegacy GET endpoint:\n\n```bash\ncurl \"http://localhost:8000/api/v1/recipes/recommend?ingredients=chicken,tomato,onion&n=3\" \\\n  -H \"X-API-Key: YOUR_API_KEY\"\n```\n\n## Health Checks\n\n```bash\ncurl http://localhost:8000/api/v1/health/live\ncurl http://localhost:8000/api/v1/health/ready\n```\n\n`ready` checks MongoDB connectivity and required recommender artifacts.\n\n## Local Development\n\n```bash\npython -m venv .venv\n. .venv/Scripts/activate\npip install -r requirements.txt\ncp .env.example .env\n```\n\nFor non-Docker development, set this in `.env`:\n\n```text\nMONGODB_CONNECTION_STRING=mongodb://localhost:27017\nDATA_DIR=data/raw\nARTIFACT_DIR=artifacts\n```\n\nRun preprocessing and start the API:\n\n```bash\npython -m app.scripts.preprocess_data\nuvicorn app.main:app --reload\n```\n\n## Tests\n\n```bash\npytest\n```\n\n## Security Notes\n\n- Do not commit `.env`, raw API keys, generated secrets, local datasets, or generated artifacts.\n- Rotate secrets if `.env` or API keys were ever shared.\n- For production, configure MongoDB authentication, TLS, rate limiting, structured logging, and managed secret storage.\n"
+      }
+    },
+    {
+      "name": "snooker_game",
+      "full_name": "lovisticsdev/snooker_game",
+      "description": "A browser-based snooker game built with p5.js and Matter.js.",
+      "html_url": "https://github.com/lovisticsdev/snooker_game",
+      "language": "JavaScript",
+      "languages": {
+        "JavaScript": 37948,
+        "HTML": 4367
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T12:25:28Z",
+      "updated_at": "2026-05-19T12:27:10Z",
+      "pushed_at": "2026-05-19T12:27:05Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 1612,
+        "content": "# Snooker Game\n\nA browser-based snooker game built with p5.js and Matter.js. It includes table physics, cue-ball placement, drag-and-release cue control, scoring, break tracking, foul handling, and multiple rack modes.\n\n## Features\n\n- Physics-based ball movement and collisions\n- Cue placement inside the D after frame setup or cue-ball reset\n- Drag-and-release shot control\n- Standard rack, random reds, and fully randomized ball layouts\n- Score, break, target, and highest-break HUD\n- Optional hint overlay and debug statistics\n\n## Controls\n\n```text\n1                  Start standard rack\n2                  Start random-reds rack\n3                  Start all-random rack\nR                  Reset current mode\nH                  Toggle hints\nD                  Toggle debug overlay\nMouse drag/release Aim and strike the cue ball\n```\n\n## Run\n\nThe game can be opened directly in a browser:\n\n```text\nindex.html\n```\n\nFor local development with Vite:\n\n```bash\nnpm install\nnpm run dev\n```\n\nThen open the local URL printed by Vite.\n\n## Project Structure\n\n```text\nindex.html       Browser entry point\npackage.json     Vite scripts and JavaScript dependencies\nsrc/Constants.js Game constants and configuration\nsrc/Table.js     Table geometry and drawing\nsrc/Ball.js      Ball entity logic\nsrc/BallManager.js Rack setup, scoring, fouls, and ball state\nsrc/Cue.js       Cue aiming and shot control\nsrc/Sketch.js    Main p5.js sketch and game loop\n```\n\n## Git Notes\n\nSource files and project metadata are tracked. Dependency folders, build output, logs, local environment files, editor metadata, and OS files are ignored.\n"
+      }
+    },
+    {
+      "name": "SysMLv2_toaster_model",
+      "full_name": "lovisticsdev/SysMLv2_toaster_model",
+      "description": "A SysML v2 model of a standard two-slot toaster.",
+      "html_url": "https://github.com/lovisticsdev/SysMLv2_toaster_model",
+      "language": null,
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T11:52:52Z",
+      "updated_at": "2026-05-19T11:54:03Z",
+      "pushed_at": "2026-05-19T11:53:59Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 1434,
+        "content": "# SysML v2 Toaster Model\n\nA SysML v2 model of a standard two-slot toaster. The model captures the toaster's physical components, interfaces, operating states, behavioral flow, safety requirements, and view definitions using textual SysML.\n\n## Model Scope\n\n- Two-slot toaster system definition\n- Casing, bread slots, heating elements, power cord, timer, lever, crumb tray, control panel, and thermal sensor\n- Power, control, mechanical, and sensor interfaces\n- Toasting behavior from bread lowering through heating and pop-up completion\n- Safety and temperature requirements with satisfaction relationships\n- State, signal, setting, item, and dimension definitions\n- Structure, behavior, and requirements view definitions\n\n## Project Structure\n\n```text\nToaster.sysml              Main SysML v2 toaster model\nToasterModel/Toaster.sysml  Tool/project copy of the same toaster model\ntoaster-explanation.txt    Short design explanation\nscreenshot.png             Model screenshot or visual evidence\n```\n\n## Open the Model\n\nOpen `Toaster.sysml` in a SysML v2-compatible textual modeling tool or editor. The `ToasterModel/` folder is kept for tools that expect the model inside a project directory.\n\n## Git Notes\n\nThe repository tracks the toaster model, explanation, and screenshot. Local workspace metadata and bundled SysML/KerML library/example folders are ignored because they are external tooling resources rather than project source.\n"
+      }
+    },
+    {
+      "name": "zombie_attack",
+      "full_name": "lovisticsdev/zombie_attack",
+      "description": "A terminal-based C game where the player controls a zombie and tries to catch a fleeing human on a bounded grid.",
+      "html_url": "https://github.com/lovisticsdev/zombie_attack",
+      "language": "C",
+      "languages": {
+        "C": 11638
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T06:43:01Z",
+      "updated_at": "2026-05-19T06:44:40Z",
+      "pushed_at": "2026-05-19T06:44:36Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 1011,
+        "content": "# Zombie Attack\n\nA terminal-based C game where the player controls a zombie and tries to catch a fleeing human on a bounded grid. The game uses non-blocking keyboard input, ANSI terminal rendering, and simple distance-based movement for the human.\n\n## Features\n\n- Real-time terminal rendering with ANSI colors\n- WASD, arrow-key, and Vim-style movement controls\n- Human movement that tries to maximize distance from the zombie\n- Move counter and elapsed-time display\n- Cross-platform input handling for Windows and POSIX terminals\n\n## Controls\n\n```text\nWASD or arrow keys  Move the zombie\nHJKL                Vim-style movement\nQ or ESC            Quit\n```\n\n## Build\n\n```bash\ngcc -std=c11 -Wall -Wextra -pedantic zombie.c -o zombie\n```\n\n## Run\n\nOn Windows:\n\n```powershell\n.\\zombie.exe\n```\n\nOn Linux/macOS:\n\n```bash\n./zombie\n```\n\n## Project Structure\n\n```text\nzombie.c   Game source code\n```\n\n## Git Notes\n\nCompiled binaries and object files are ignored. Track the C source, README, and repository metadata only.\n"
+      }
+    },
+    {
+      "name": "MonoAlg3D_cardiac_electrophysiology",
+      "full_name": "lovisticsdev/MonoAlg3D_cardiac_electrophysiology",
+      "description": "Task-focused MonoAlg3D workspace for 3D cardiac electrophysiology simulations.",
+      "html_url": "https://github.com/lovisticsdev/MonoAlg3D_cardiac_electrophysiology",
+      "language": "C",
+      "languages": {
+        "C": 5413507,
+        "Cuda": 603324,
+        "Shell": 47664,
+        "Makefile": 29652,
+        "C++": 23575,
+        "MATLAB": 8638,
+        "Dockerfile": 433
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T06:25:59Z",
+      "updated_at": "2026-05-19T06:27:20Z",
+      "pushed_at": "2026-05-19T06:27:15Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 2645,
+        "content": "# MonoAlg3D Cardiac Electrophysiology\n\nTask-focused MonoAlg3D workspace for 3D cardiac electrophysiology simulations. This repository combines the MonoAlg3D solver code with assignment-specific meshes, configuration files, MATLAB helpers, and result figures for single-cell validation, tissue-slab simulations, conduction velocity analysis, and ion-channel block experiments.\n\n## Assignment Scope\n\n- Build and run the MonoAlg3D monodomain simulator\n- Inspect `.alg` mesh format and `.ini` configuration structure\n- Simulate an endocardial single-cell cube and compare it with MATLAB ToR-ORd output\n- Run transmural tissue-slab simulations and compare action-potential traces\n- Measure conduction velocity along x, y, and z directions\n- Compare 100, 300, and 500 micrometer tissue-slab meshes\n- Simulate `IKr`, `INa`, and `ICaL` block scenarios and analyse activation/repolarisation effects\n- Visualize simulation outputs with ParaView and MATLAB helper scripts\n\n## Project Structure\n\n```text\nsrc/              MonoAlg3D source code and assignment custom libraries\nexample_configs/  Simulation configuration files\nmeshes/           Cube and tissue-slab mesh files\nmatlab/           MATLAB validation and post-processing scripts\nfigures/          Assignment result figures\noutputs/          Generated simulation output, ignored by Git\nDockerfile        Container setup for the solver environment\nTask.pdf          Assignment brief\n```\n\n## Requirements\n\n- Linux, WSL, or Docker-based build environment\n- GCC/Make toolchain\n- CUDA/NVIDIA environment where GPU solver support is required\n- MATLAB for validation and plotting scripts\n- ParaView for `.pvd`, `.vtu`, `.acm`, and activation-map visualization\n\n## Build\n\nFrom the repository root:\n\n```bash\n./build.sh -f simulator\n```\n\nThe compiled simulator is written to `bin/`.\n\n## Run Examples\n\nSingle-cell cube simulation:\n\n```bash\nbin/MonoAlg3D -c example_configs/singleCube_endo.ini\n```\n\nTransmural slab simulation:\n\n```bash\nbin/MonoAlg3D -c example_configs/transmuralSlab.ini\n```\n\nConduction velocity examples:\n\n```bash\nbin/MonoAlg3D -c example_configs/cv_100.ini\nbin/MonoAlg3D -c example_configs/cv_300.ini\nbin/MonoAlg3D -c example_configs/cv_500.ini\n```\n\n## Git Notes\n\nBuild products, binaries, shared libraries, generated outputs, temporary files, and local/private data are ignored. Assignment source files, custom MonoAlg3D libraries, meshes, configs, MATLAB scripts, figures, guides, and `Task.pdf` remain trackable.\n\n## Attribution\n\nMonoAlg3D is an open-source cardiac electrophysiology solver. See `LICENSE` and the included guide files for upstream licensing, setup, and citation details.\n"
+      }
+    },
+    {
+      "name": "computational_electrophysiology",
+      "full_name": "lovisticsdev/computational_electrophysiology",
+      "description": "MATLAB workflows for computational electrophysiology assignments covering Hodgkin-Huxley neuron dynamics and ToR-ORd ventricular cardiomyocyte simulations.",
+      "html_url": "https://github.com/lovisticsdev/computational_electrophysiology",
+      "language": "MATLAB",
+      "languages": {
+        "MATLAB": 281531,
+        "CSS": 12576,
+        "JavaScript": 2590
+      },
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T06:02:33Z",
+      "updated_at": "2026-05-19T06:07:52Z",
+      "pushed_at": "2026-05-19T06:07:48Z",
+      "readme": {
+        "name": "README.md",
+        "path": "README.md",
+        "size": 1967,
+        "content": "# Computational Electrophysiology\n\nMATLAB workflows for computational electrophysiology assignments covering Hodgkin-Huxley neuron dynamics and ToR-ORd ventricular cardiomyocyte simulations. The repository includes model scripts, assignment instructions, reference ToR-ORd code, and generated figures used to analyse stimulus response, solver behaviour, rate dependency, heart failure remodelling, and population-of-models variability.\n\n## Assignment Scope\n\n- Simulate Hodgkin-Huxley action potentials with MATLAB `ode15s`\n- Explore stimulus amplitude and pacing-frequency effects\n- Complete and compare an explicit Euler solver against `ode15s`\n- Run ToR-ORd example scripts and inspect model structure/currents\n- Visualize AP, calcium transient, `INa`, `ICaL`, and `IKr`\n- Study rate dependency at different basic cycle lengths\n- Model heart failure by scaling selected ionic parameters\n- Generate a population of ToR-ORd models using sampled current multipliers\n\n## Project Structure\n\n```text\nMainFile_modHH.m   Main Hodgkin-Huxley ODE15s simulation script\nmodHH.m            Hodgkin-Huxley model equations\nEuler_HH.m         Euler-method implementation and ODE15s comparison\nfigures/           Generated plots and assignment evidence\ntorord/            ToR-ORd MATLAB and CellML resources\nTask.pdf           Assignment brief\n```\n\n## Requirements\n\n- MATLAB with ODE solver support\n- Statistics and Machine Learning Toolbox for Latin hypercube sampling workflows\n- ToR-ORd resources included under `torord/`\n\n## Run\n\nOpen MATLAB in this folder, then run the required scripts from the Command Window or editor:\n\n```matlab\nMainFile_modHH\nEuler_HH\n```\n\nFor ToR-ORd workflows, use the scripts in `torord/matlab/`, including the provided demonstration scripts and assignment-specific analysis scripts.\n\n## Notes\n\nThe ToR-ORd materials retain their own license files under `torord/`. Generated figures are kept in `figures/` because they document the assignment results.\n"
+      }
+    },
+    {
+      "name": "a5_textures_and_shadows",
+      "full_name": "lovisticsdev/a5_textures_and_shadows",
+      "description": "A WebGL/Three.js graphics project demonstrating texture mapping, cubemap backgrounds, environment mapping, and shadow mapping with custom GLSL shaders",
+      "html_url": "https://github.com/lovisticsdev/a5_textures_and_shadows",
+      "language": "JavaScript",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T05:39:20Z",
+      "updated_at": "2026-05-19T05:47:56Z",
+      "pushed_at": "2026-05-19T05:47:51Z",
+      "readme": null
+    },
+    {
+      "name": "reaction_game",
+      "full_name": "lovisticsdev/reaction_game",
+      "description": "A lightweight browser game that measures how quickly the player clicks a randomly appearing shape.",
+      "html_url": "https://github.com/lovisticsdev/reaction_game",
+      "language": "HTML",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T05:11:04Z",
+      "updated_at": "2026-05-19T05:29:10Z",
+      "pushed_at": "2026-05-19T05:29:06Z",
+      "readme": null
+    },
+    {
+      "name": "food_scanner",
+      "full_name": "lovisticsdev/food_scanner",
+      "description": "A full-stack food barcode scanning prototype.",
+      "html_url": "https://github.com/lovisticsdev/food_scanner",
+      "language": "Jupyter Notebook",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T04:38:21Z",
+      "updated_at": "2026-05-19T04:42:09Z",
+      "pushed_at": "2026-05-19T04:42:05Z",
+      "readme": null
+    },
+    {
+      "name": "snake_server",
+      "full_name": "lovisticsdev/snake_server",
+      "description": "A C multiplayer snake game server with a binary socket protocol, board simulation, snake movement, threaded client handling, and a Python pygame client.",
+      "html_url": "https://github.com/lovisticsdev/snake_server",
+      "language": "C",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T04:03:16Z",
+      "updated_at": "2026-05-19T04:08:58Z",
+      "pushed_at": "2026-05-19T04:08:54Z",
+      "readme": null
+    },
+    {
+      "name": "coverage_guided_fuzzer",
+      "full_name": "lovisticsdev/coverage_guided_fuzzer",
+      "description": "A C mutation-based fuzzer for command-line programs.",
+      "html_url": "https://github.com/lovisticsdev/coverage_guided_fuzzer",
+      "language": "C",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T03:53:16Z",
+      "updated_at": "2026-05-19T03:54:57Z",
+      "pushed_at": "2026-05-19T03:54:53Z",
+      "readme": null
+    },
+    {
+      "name": "sfmm_heap_allocator",
+      "full_name": "lovisticsdev/sfmm_heap_allocator",
+      "description": "A C implementation of a dynamic memory allocator.",
+      "html_url": "https://github.com/lovisticsdev/sfmm_heap_allocator",
+      "language": "C",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T03:43:15Z",
+      "updated_at": "2026-05-19T03:44:32Z",
+      "pushed_at": "2026-05-19T03:44:29Z",
+      "readme": null
+    },
+    {
+      "name": "zlib_utility",
+      "full_name": "lovisticsdev/zlib_utility",
+      "description": "A C command-line project that implements gzip-style compression and decompression.",
+      "html_url": "https://github.com/lovisticsdev/zlib_utility",
+      "language": "C",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T03:30:02Z",
+      "updated_at": "2026-05-19T03:33:54Z",
+      "pushed_at": "2026-05-19T03:33:51Z",
+      "readme": null
+    },
+    {
+      "name": "png_utility",
+      "full_name": "lovisticsdev/png_utility",
+      "description": "A C command-line project for inspecting and manipulating PNG files",
+      "html_url": "https://github.com/lovisticsdev/png_utility",
+      "language": "C",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T03:03:29Z",
+      "updated_at": "2026-05-19T03:10:11Z",
+      "pushed_at": "2026-05-19T03:10:08Z",
+      "readme": null
+    },
+    {
+      "name": "lueur",
+      "full_name": "lovisticsdev/lueur",
+      "description": "A native Android mindfulness app for discovering daily quotes, saving favorites, and writing private reflections.",
+      "html_url": "https://github.com/lovisticsdev/lueur",
+      "language": "Kotlin",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T02:39:32Z",
+      "updated_at": "2026-05-19T02:44:46Z",
+      "pushed_at": "2026-05-19T02:44:42Z",
+      "readme": null
+    },
+    {
+      "name": "lovistics.dev",
+      "full_name": "lovisticsdev/lovistics.dev",
+      "description": "Developer portfolio for lovisticsdev. The site is built with Astro and TypeScript.",
+      "html_url": "https://github.com/lovisticsdev/lovistics.dev",
+      "language": "Astro",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-19T01:38:20Z",
+      "updated_at": "2026-05-19T01:53:49Z",
+      "pushed_at": "2026-05-19T01:53:45Z",
+      "readme": null
+    },
+    {
+      "name": "taifa-exchange",
+      "full_name": "lovisticsdev/taifa-exchange",
+      "description": "Request-boundary and policy decision service for Taifa Republic, a synthetic digital public infrastructure range. Resolves actor context through TaifaID, evaluates cross-system route policies, records authorization decisions, and emits exchange audit events.",
+      "html_url": "https://github.com/lovisticsdev/taifa-exchange",
+      "language": "Go",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-14T20:47:58Z",
+      "updated_at": "2026-05-18T07:12:02Z",
+      "pushed_at": "2026-05-18T07:13:12Z",
+      "readme": null
+    },
+    {
+      "name": "taifa-id",
+      "full_name": "lovisticsdev/taifa-id",
+      "description": "Identity and registry service for Taifa Republic, a synthetic digital public infrastructure range. Owns persons, organizations, memberships, credentials, actor-context resolution, and identity audit events.",
+      "html_url": "https://github.com/lovisticsdev/taifa-id",
+      "language": "Go",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": false,
+      "created_at": "2026-05-14T11:52:17Z",
+      "updated_at": "2026-05-15T08:19:59Z",
+      "pushed_at": "2026-05-18T07:14:37Z",
+      "readme": null
+    },
+    {
+      "name": "hackazon",
+      "full_name": "lovisticsdev/hackazon",
+      "description": "hackazon vulnerable website in Docker container",
+      "html_url": "https://github.com/lovisticsdev/hackazon",
+      "language": "Dockerfile",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": true,
+      "created_at": "2025-04-05T18:59:24Z",
+      "updated_at": "2025-04-05T19:05:22Z",
+      "pushed_at": "2025-04-05T19:05:18Z",
+      "readme": null
+    },
+    {
+      "name": "boilerplate-sea-level-predictor",
+      "full_name": "lovisticsdev/boilerplate-sea-level-predictor",
+      "description": null,
+      "html_url": "https://github.com/lovisticsdev/boilerplate-sea-level-predictor",
+      "language": "Python",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": true,
+      "created_at": "2025-02-07T18:39:15Z",
+      "updated_at": "2025-02-07T18:39:53Z",
+      "pushed_at": "2025-02-07T18:39:49Z",
+      "readme": null
+    },
+    {
+      "name": "boilerplate-page-view-time-series-visualizer",
+      "full_name": "lovisticsdev/boilerplate-page-view-time-series-visualizer",
+      "description": null,
+      "html_url": "https://github.com/lovisticsdev/boilerplate-page-view-time-series-visualizer",
+      "language": "Python",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": true,
+      "created_at": "2025-02-07T17:49:40Z",
+      "updated_at": "2025-02-07T18:32:55Z",
+      "pushed_at": "2025-02-07T18:32:51Z",
+      "readme": null
+    },
+    {
+      "name": "boilerplate-medical-data-visualizer",
+      "full_name": "lovisticsdev/boilerplate-medical-data-visualizer",
+      "description": null,
+      "html_url": "https://github.com/lovisticsdev/boilerplate-medical-data-visualizer",
+      "language": "Python",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": true,
+      "created_at": "2025-02-07T17:40:41Z",
+      "updated_at": "2025-02-07T17:43:29Z",
+      "pushed_at": "2025-02-07T17:43:25Z",
+      "readme": null
+    },
+    {
+      "name": "boilerplate-demographic-data-analyzer",
+      "full_name": "lovisticsdev/boilerplate-demographic-data-analyzer",
+      "description": null,
+      "html_url": "https://github.com/lovisticsdev/boilerplate-demographic-data-analyzer",
+      "language": "Python",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": true,
+      "created_at": "2025-01-29T15:50:08Z",
+      "updated_at": "2025-01-29T17:54:56Z",
+      "pushed_at": "2025-01-29T17:54:52Z",
+      "readme": null
+    },
+    {
+      "name": "boilerplate-mean-variance-standard-deviation-calculator",
+      "full_name": "lovisticsdev/boilerplate-mean-variance-standard-deviation-calculator",
+      "description": null,
+      "html_url": "https://github.com/lovisticsdev/boilerplate-mean-variance-standard-deviation-calculator",
+      "language": "Python",
+      "languages": {},
+      "visibility": "public",
+      "archived": false,
+      "fork": true,
+      "created_at": "2025-01-29T15:26:59Z",
+      "updated_at": "2025-01-29T15:28:36Z",
+      "pushed_at": "2025-01-29T15:28:32Z",
+      "readme": null
+    }
+  ]
+}
