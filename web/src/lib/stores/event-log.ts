@@ -10,30 +10,33 @@ export interface EventLogEntry {
   raw?: unknown;
 }
 
-const MAX_LOG_ENTRIES = 200;
+const MAX_LOG_ENTRIES = 120;
 let nextLogId = 1;
 
-function createLogStore() {
+function createEventLogStore() {
   const { subscribe, set, update } = writable<{ logs: EventLogEntry[] }>({ logs: [] });
 
   return {
     subscribe,
     clear: () => set({ logs: [] }),
     push: (level: LogLevel, message: string, raw?: unknown) => {
-      update(state => {
-        const newLog: EventLogEntry = {
-          id: nextLogId++,
-          at: new Date().toLocaleTimeString(),
+      update((state) => {
+        const entry: EventLogEntry = {
+          id: nextLogId,
+          at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           level,
           message,
           raw,
         };
-        // Bounded array growth prevents memory leak
-        const logs = [newLog, ...state.logs].slice(0, MAX_LOG_ENTRIES);
-        return { logs };
+
+        nextLogId += 1;
+
+        return {
+          logs: [entry, ...state.logs].slice(0, MAX_LOG_ENTRIES),
+        };
       });
-    }
+    },
   };
 }
 
-export const logStore = createLogStore();
+export const eventLogStore = createEventLogStore();

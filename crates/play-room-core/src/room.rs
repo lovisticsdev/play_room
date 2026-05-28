@@ -33,6 +33,7 @@ impl GameRoom {
         if host.name.trim().is_empty() {
             return Err(CoreError::EmptyName);
         }
+        rules.validate()?;
         let host_id = host.id.clone();
         let mut players = BTreeMap::new();
         players.insert(host.id.clone(), host);
@@ -93,13 +94,11 @@ impl GameRoom {
             RoomCommand::Disconnect { player_id } => self.disconnect(&player_id),
             RoomCommand::Reconnect { player_id } => self.reconnect(&player_id),
             RoomCommand::TimeoutRound { round, now_ms } => self.timeout_round(round, now_ms),
+            RoomCommand::StartNextMatch { player_id } => self.start_next_match(&player_id),
         }
     }
 
     fn join(&mut self, player: Player) -> Result<Vec<RoomEvent>, CoreError> {
-        if self.phase == RoomPhase::Finished {
-            return Err(CoreError::RoomFinished);
-        }
         let player_name = player.name.trim();
         if player_name.is_empty() {
             return Err(CoreError::EmptyName);
@@ -141,7 +140,7 @@ impl GameRoom {
             player_id: player_id.clone(),
         }];
         if self.host_id.as_ref() == Some(player_id) {
-            self.host_id = self.players.keys().next().cloned();
+            self.host_id = self.next_host_id();
             events.push(RoomEvent::HostChanged {
                 host_id: self.host_id.clone(),
             });
@@ -160,7 +159,7 @@ impl GameRoom {
         ready: bool,
         now_ms: u64,
     ) -> Result<Vec<RoomEvent>, CoreError> {
-        if self.phase == RoomPhase::Finished {
+        if matches!(self.phase, RoomPhase::Finished { .. }) {
             return Err(CoreError::RoomFinished);
         }
         if matches!(self.phase, RoomPhase::InRound { .. }) {
@@ -185,6 +184,33 @@ impl GameRoom {
             events.extend(self.start_round(now_ms)?);
         }
         Ok(events)
+    }
+
+    fn start_next_match(&mut self, player_id: &PlayerId) -> Result<Vec<RoomEvent>, CoreError> {
+        if !matches!(self.phase, RoomPhase::Finished { .. }) {
+            return Err(CoreError::MatchNotFinished);
+        }
+        let player = self
+            .players
+            .get(player_id)
+            .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
+        if !player.connected {
+            return Err(CoreError::PlayerDisconnected);
+        }
+        if self.host_id.as_ref() != Some(player_id) {
+            return Err(CoreError::HostOnly);
+        }
+
+        self.phase = RoomPhase::Lobby;
+        self.round = 0;
+        self.moves.clear();
+        for player in self.players.values_mut() {
+            player.score = 0;
+            player.ready = false;
+        }
+        Ok(vec![RoomEvent::MatchReset {
+            requested_by: player_id.clone(),
+        }])
     }
 
     fn set_spectator(
@@ -365,14 +391,16 @@ impl GameRoom {
             .values()
             .find(|p| p.score >= self.rules.target_score)
             .map(|p| p.id.clone());
+        for player in self.players.values_mut() {
+            player.ready = false;
+        }
         if winner.is_some() {
-            self.phase = RoomPhase::Finished;
+            self.phase = RoomPhase::Finished {
+                winner: winner.clone(),
+            };
             events.push(RoomEvent::GameEnded { winner });
         } else {
             self.phase = RoomPhase::Lobby;
-            for player in self.players.values_mut() {
-                player.ready = false;
-            }
         }
         Ok(events)
     }
@@ -415,6 +443,35 @@ impl GameRoom {
         !active.is_empty() && active.iter().all(|id| self.moves.contains_key(id))
     }
 
+    pub fn player_named(&self, name: &str) -> Option<PlayerView> {
+        let requested = name.trim();
+        self.players
+            .values()
+            .find(|player| player.name.trim().eq_ignore_ascii_case(requested))
+            .map(|player| PlayerView {
+                id: player.id.clone(),
+                name: player.name.clone(),
+                role: player.role,
+                ready: player.ready,
+                connected: player.connected,
+                score: player.score,
+            })
+    }
+
+    fn next_host_id(&self) -> Option<PlayerId> {
+        self.players
+            .values()
+            .find(|player| player.connected && player.role == PlayerRole::Participant)
+            .or_else(|| {
+                self.players
+                    .values()
+                    .find(|player| player.role == PlayerRole::Participant)
+            })
+            .or_else(|| self.players.values().find(|player| player.connected))
+            .or_else(|| self.players.values().next())
+            .map(|player| player.id.clone())
+    }
+
     fn participant_count(&self) -> usize {
         self.players
             .values()
@@ -453,6 +510,8 @@ impl GameRoom {
                 .filter(|p| p.role == PlayerRole::Spectator)
                 .count(),
             max_players: self.rules.max_players,
+            game: self.rules.game,
+            target_score: self.rules.target_score,
         }
     }
 
@@ -485,6 +544,43 @@ impl GameRoom {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn two_player_room() -> GameRoom {
+        let host = Player::participant(PlayerId::new("alice"), "Alice");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+        room.apply(RoomCommand::Join {
+            player: Player::participant(PlayerId::new("bob"), "Bob"),
+        })
+        .unwrap();
+        room
+    }
+
+    fn ready(room: &mut GameRoom, player_id: &str, now_ms: u64) {
+        room.apply(RoomCommand::SetReady {
+            player_id: PlayerId::new(player_id),
+            ready: true,
+            now_ms,
+        })
+        .unwrap();
+    }
+
+    fn alice_wins_round(room: &mut GameRoom, now_ms: u64) {
+        ready(room, "alice", now_ms);
+        ready(room, "bob", now_ms);
+        room.apply(RoomCommand::SubmitMove {
+            player_id: PlayerId::new("alice"),
+            mv: Move::Paper,
+            now_ms: now_ms + 1,
+        })
+        .unwrap();
+        room.apply(RoomCommand::SubmitMove {
+            player_id: PlayerId::new("bob"),
+            mv: Move::Rock,
+            now_ms: now_ms + 2,
+        })
+        .unwrap();
+    }
 
     #[test]
     fn scoreboard_excludes_spectators_but_keeps_disconnected_participants() {
@@ -528,5 +624,84 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err, CoreError::DuplicatePlayerName("alex".to_owned()));
+    }
+
+    #[test]
+    fn best_of_three_finishes_when_a_player_reaches_two_points() {
+        let mut room = two_player_room();
+
+        alice_wins_round(&mut room, 1000);
+        assert!(matches!(room.phase(), RoomPhase::Lobby));
+
+        alice_wins_round(&mut room, 2000);
+
+        assert!(matches!(
+            room.phase(),
+            RoomPhase::Finished {
+                winner: Some(player_id)
+            } if player_id == &PlayerId::new("alice")
+        ));
+        assert_eq!(room.snapshot().scoreboard[0].score, 2);
+    }
+
+    #[test]
+    fn host_can_reset_finished_match_without_changing_seats() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1000);
+        alice_wins_round(&mut room, 2000);
+
+        let events = room
+            .apply(RoomCommand::StartNextMatch {
+                player_id: PlayerId::new("alice"),
+            })
+            .unwrap();
+
+        assert!(matches!(room.phase(), RoomPhase::Lobby));
+        assert!(matches!(events.as_slice(), [RoomEvent::MatchReset { .. }]));
+        assert_eq!(room.snapshot().round, 0);
+        assert!(room
+            .snapshot()
+            .players
+            .iter()
+            .all(|player| player.score == 0));
+        assert!(room.snapshot().players.iter().all(|player| !player.ready));
+        assert_eq!(room.participant_count(), 2);
+    }
+
+    #[test]
+    fn non_host_cannot_reset_finished_match() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1000);
+        alice_wins_round(&mut room, 2000);
+
+        let err = room
+            .apply(RoomCommand::StartNextMatch {
+                player_id: PlayerId::new("bob"),
+            })
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::HostOnly);
+    }
+
+    #[test]
+    fn host_transfer_prefers_connected_participants() {
+        let host = Player::participant(PlayerId::new("host"), "Host");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+        room.apply(RoomCommand::Join {
+            player: Player::spectator(PlayerId::new("spectator"), "Spectator"),
+        })
+        .unwrap();
+        room.apply(RoomCommand::Join {
+            player: Player::participant(PlayerId::new("guest"), "Guest"),
+        })
+        .unwrap();
+
+        room.apply(RoomCommand::Leave {
+            player_id: PlayerId::new("host"),
+        })
+        .unwrap();
+
+        assert_eq!(room.snapshot().host_id, Some(PlayerId::new("guest")));
     }
 }

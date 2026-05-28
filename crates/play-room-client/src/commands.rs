@@ -39,6 +39,7 @@ pub fn parse_command(input: &str) -> Result<Option<ClientRequest>, ClientError> 
             }))
         }
         "/leave" => Ok(Some(ClientRequest::LeaveRoom)),
+        "/again" | "/next" => Ok(Some(ClientRequest::StartNextMatch)),
         "/ready" => Ok(Some(ClientRequest::SetReady { ready: true })),
         "/unready" => Ok(Some(ClientRequest::SetReady { ready: false })),
         "/spectate" => {
@@ -83,6 +84,7 @@ fn print_help() {
     println!("  /create <room name>");
     println!("  /join <room_id|room_name>");
     println!("  /leave");
+    println!("  /again | /next");
     println!("  /ready | /unready");
     println!("  /move <rock|paper|scissors|lizard|spock>");
     println!("  /spectate [room_id|room_name] | /play");

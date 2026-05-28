@@ -5,7 +5,7 @@ pub fn assert_lobby(room: &GameRoom) {
 }
 
 pub fn assert_finished(room: &GameRoom) {
-    assert!(matches!(room.phase(), RoomPhase::Finished));
+    assert!(matches!(room.phase(), RoomPhase::Finished { .. }));
 }
 
 pub fn assert_participants(room: &GameRoom, expected: usize) {

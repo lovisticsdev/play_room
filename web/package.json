@@ -10,7 +10,6 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "bootstrap": "^5.3.3",
     "svelte": "^5.16.0"
   },
   "devDependencies": {

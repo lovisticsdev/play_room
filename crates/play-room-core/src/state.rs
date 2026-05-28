@@ -1,3 +1,4 @@
+use crate::game::GameKind;
 use crate::ids::{PlayerId, RoomId};
 use crate::player::PlayerRole;
 use crate::rules::GameRules;
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub enum RoomPhase {
     Lobby,
     InRound { round: u32, deadline_ms: u64 },
-    Finished,
+    Finished { winner: Option<PlayerId> },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -30,6 +31,8 @@ pub struct RoomSummary {
     pub players: usize,
     pub spectators: usize,
     pub max_players: usize,
+    pub game: GameKind,
+    pub target_score: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

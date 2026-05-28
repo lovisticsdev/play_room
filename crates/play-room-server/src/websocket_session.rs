@@ -47,9 +47,7 @@ pub async fn handle_websocket_connection(
     else {
         let msg = ServerMessage::Response {
             request_id: first.request_id,
-            result: ServerResult::Error {
-                message: "first request must be connect".to_owned(),
-            },
+            result: ServerResult::error("first request must be connect"),
         };
         websocket
             .send(Message::Text(encode_server(&msg)?.into()))
@@ -65,6 +63,7 @@ pub async fn handle_websocket_connection(
             first.request_id,
             connected.reconnect_token.clone(),
         );
+        locked.flush_messages(connected.messages.clone());
         connected
     };
 
@@ -84,9 +83,7 @@ pub async fn handle_websocket_connection(
                                 &tx,
                                 ServerMessage::Response {
                                     request_id: 0,
-                                    result: ServerResult::Error {
-                                        message: err.to_string(),
-                                    },
+                                    result: ServerResult::error(err.to_string()),
                                 },
                             ),
                         }

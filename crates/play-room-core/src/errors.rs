@@ -16,6 +16,15 @@ pub enum CoreError {
     #[error("room is already finished")]
     RoomFinished,
 
+    #[error("match is not finished")]
+    MatchNotFinished,
+
+    #[error("only the room host can perform this action")]
+    HostOnly,
+
+    #[error("invalid game rules: {0}")]
+    InvalidRules(String),
+
     #[error("player name is empty")]
     EmptyName,
 

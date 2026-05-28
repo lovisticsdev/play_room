@@ -1,4 +1,4 @@
-use crate::game::GameKind;
+use crate::{errors::CoreError, game::GameKind};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -17,7 +17,7 @@ impl GameRules {
             game: GameKind::RockPaperScissors,
             min_players: 2,
             max_players: 2,
-            target_score: 3,
+            target_score: 2,
             round_seconds: 15,
             allow_spectators: true,
         }
@@ -28,10 +28,38 @@ impl GameRules {
             game: GameKind::RockPaperScissorsLizardSpock,
             min_players: 2,
             max_players: 2,
-            target_score: 3,
+            target_score: 2,
             round_seconds: 15,
             allow_spectators: true,
         }
+    }
+
+    pub fn best_of_rounds(&self) -> u32 {
+        self.target_score.saturating_mul(2).saturating_sub(1)
+    }
+
+    pub fn validate(&self) -> Result<(), CoreError> {
+        if self.min_players < 2 {
+            return Err(CoreError::InvalidRules(
+                "min_players must be at least 2".to_owned(),
+            ));
+        }
+        if self.max_players < self.min_players {
+            return Err(CoreError::InvalidRules(
+                "max_players must be greater than or equal to min_players".to_owned(),
+            ));
+        }
+        if self.target_score == 0 {
+            return Err(CoreError::InvalidRules(
+                "target_score must be at least 1".to_owned(),
+            ));
+        }
+        if self.round_seconds == 0 {
+            return Err(CoreError::InvalidRules(
+                "round_seconds must be at least 1".to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 

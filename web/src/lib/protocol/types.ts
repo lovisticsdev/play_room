@@ -19,7 +19,7 @@ export interface GameRules {
 export type RoomPhase =
   | { phase: 'lobby' }
   | { phase: 'in_round'; round: number; deadline_ms: number }
-  | { phase: 'finished' };
+  | { phase: 'finished'; winner: PlayerId | null };
 
 export interface PlayerView {
   id: PlayerId;
@@ -43,6 +43,8 @@ export interface RoomSummary {
   players: number;
   spectators: number;
   max_players: number;
+  game: GameKind;
+  target_score: number;
 }
 
 export interface RoomSnapshot {
@@ -83,6 +85,7 @@ export type RoomEvent =
   | { event: 'move_accepted'; player_id: PlayerId; mv: Move }
   | { event: 'round_resolved'; result: RoundResult }
   | { event: 'game_ended'; winner: PlayerId | null }
+  | { event: 'match_reset'; requested_by: PlayerId }
   | { event: 'host_changed'; host_id: PlayerId | null };
 
 export type ClientRequest =
@@ -92,6 +95,7 @@ export type ClientRequest =
   | { type: 'join_room'; room_id: RoomId }
   | { type: 'spectate_room'; room_id: RoomId }
   | { type: 'leave_room' }
+  | { type: 'start_next_match' }
   | { type: 'set_ready'; ready: boolean }
   | { type: 'set_spectator'; spectator: boolean }
   | { type: 'submit_move'; mv: Move }
@@ -108,9 +112,20 @@ export interface WelcomeState {
   protocol_version: number;
 }
 
+export type ErrorCode =
+  | 'invalid_request'
+  | 'room_not_found'
+  | 'room_name_exists'
+  | 'player_name_exists'
+  | 'room_full'
+  | 'not_in_room'
+  | 'match_not_finished'
+  | 'host_only'
+  | 'invalid_action';
+
 export type ServerResult =
   | { status: 'ok' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; code?: ErrorCode | null; suggestions?: string[] }
   | { status: 'welcome'; player_id: PlayerId; reconnect_token: SessionToken; protocol_version: number }
   | { status: 'room_list'; rooms: RoomSummary[] }
   | { status: 'room_snapshot'; room: RoomSnapshot }

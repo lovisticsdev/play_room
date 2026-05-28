@@ -20,6 +20,7 @@ pub enum ClientRequest {
         room_id: RoomId,
     },
     LeaveRoom,
+    StartNextMatch,
     SetReady {
         ready: bool,
     },

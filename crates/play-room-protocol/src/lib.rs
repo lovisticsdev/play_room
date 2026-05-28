@@ -13,5 +13,5 @@ pub use error::ProtocolError;
 pub use event::ServerEvent;
 pub use message::{ClientEnvelope, ServerMessage};
 pub use request::ClientRequest;
-pub use response::ServerResult;
+pub use response::{ErrorCode, ServerResult};
 pub use version::PROTOCOL_VERSION;

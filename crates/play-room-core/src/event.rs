@@ -42,6 +42,9 @@ pub enum RoomEvent {
     GameEnded {
         winner: Option<PlayerId>,
     },
+    MatchReset {
+        requested_by: PlayerId,
+    },
     HostChanged {
         host_id: Option<PlayerId>,
     },

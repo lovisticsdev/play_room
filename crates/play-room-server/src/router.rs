@@ -1,4 +1,4 @@
-use crate::room_manager::RoomManager;
+use crate::room_manager::{RoomManager, RoomManagerError};
 use crate::scheduler::{now_ms, schedule_round_timeout};
 use play_room_core::RoomCommand;
 use play_room_protocol::{ClientEnvelope, ClientRequest, ServerResult};
@@ -17,9 +17,7 @@ pub async fn route(
             locked.respond(
                 &player_id,
                 request_id,
-                ServerResult::Error {
-                    message: "already connected".to_owned(),
-                },
+                ServerResult::error("already connected"),
             );
         }
         ClientRequest::Ping => {
@@ -43,9 +41,7 @@ pub async fn route(
                     locked.respond(&player_id, request_id, ServerResult::Ok);
                     locked.flush_messages(messages);
                 }
-                Err(message) => {
-                    locked.respond(&player_id, request_id, ServerResult::Error { message })
-                }
+                Err(error) => respond_error(&locked, &player_id, request_id, error),
             }
         }
         ClientRequest::JoinRoom { room_id } => {
@@ -55,9 +51,7 @@ pub async fn route(
                     locked.respond(&player_id, request_id, ServerResult::Ok);
                     locked.flush_messages(messages);
                 }
-                Err(message) => {
-                    locked.respond(&player_id, request_id, ServerResult::Error { message })
-                }
+                Err(error) => respond_error(&locked, &player_id, request_id, error),
             }
         }
         ClientRequest::SpectateRoom { room_id } => {
@@ -67,9 +61,7 @@ pub async fn route(
                     locked.respond(&player_id, request_id, ServerResult::Ok);
                     locked.flush_messages(messages);
                 }
-                Err(message) => {
-                    locked.respond(&player_id, request_id, ServerResult::Error { message })
-                }
+                Err(error) => respond_error(&locked, &player_id, request_id, error),
             }
         }
         ClientRequest::LeaveRoom => {
@@ -79,9 +71,7 @@ pub async fn route(
                     locked.respond(&player_id, request_id, ServerResult::Ok);
                     locked.flush_messages(messages);
                 }
-                Err(message) => {
-                    locked.respond(&player_id, request_id, ServerResult::Error { message })
-                }
+                Err(error) => respond_error(&locked, &player_id, request_id, error),
             }
         }
         ClientRequest::SetReady { ready } => {
@@ -107,6 +97,12 @@ pub async fn route(
             };
             apply_room_command(manager, player_id, request_id, command).await;
         }
+        ClientRequest::StartNextMatch => {
+            let command = RoomCommand::StartNextMatch {
+                player_id: player_id.clone(),
+            };
+            apply_room_command(manager, player_id, request_id, command).await;
+        }
     }
 }
 
@@ -127,6 +123,15 @@ async fn apply_room_command(
                 schedule_round_timeout(manager, room_id, round, deadline_ms);
             }
         }
-        Err(message) => locked.respond(&player_id, request_id, ServerResult::Error { message }),
+        Err(error) => respond_error(&locked, &player_id, request_id, error),
     }
+}
+
+fn respond_error(
+    manager: &RoomManager,
+    player_id: &play_room_core::PlayerId,
+    request_id: u64,
+    error: RoomManagerError,
+) {
+    manager.respond(player_id, request_id, error.into_server_result());
 }

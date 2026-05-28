@@ -1,16 +1,24 @@
 import type { ClientRequest, GameRules, Move, RoomId, SessionToken } from './types';
 import { defaultRules } from './rules';
 
-function normalizeOptional(value: string): SessionToken | null {
-  const trimmed = value.trim();
+function normalizeOptional(value: string | null | undefined): SessionToken | null {
+  const trimmed = value?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function connectRequest(name: string, reconnectToken: string): ClientRequest {
+export function connectRequest(name: string, reconnectToken: string | null = null): ClientRequest {
   return {
     type: 'connect',
     name: name.trim(),
     reconnect_token: normalizeOptional(reconnectToken),
+  };
+}
+
+export function reconnectRequest(reconnectToken: string): ClientRequest {
+  return {
+    type: 'connect',
+    name: '',
+    reconnect_token: reconnectToken.trim(),
   };
 }
 
@@ -32,6 +40,10 @@ export function spectateRoomRequest(roomId: RoomId): ClientRequest {
 
 export function leaveRoomRequest(): ClientRequest {
   return { type: 'leave_room' };
+}
+
+export function startNextMatchRequest(): ClientRequest {
+  return { type: 'start_next_match' };
 }
 
 export function submitMoveRequest(mv: Move): ClientRequest {

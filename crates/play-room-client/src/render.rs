@@ -11,7 +11,16 @@ pub fn render_message(message: &ServerMessage) {
 fn render_response(request_id: u64, result: &ServerResult) {
     match result {
         ServerResult::Ok => println!("[ok #{request_id}]"),
-        ServerResult::Error { message } => println!("[error #{request_id}] {message}"),
+        ServerResult::Error {
+            message,
+            suggestions,
+            ..
+        } => {
+            println!("[error #{request_id}] {message}");
+            if !suggestions.is_empty() {
+                println!("suggestions: {}", suggestions.join(", "));
+            }
+        }
         ServerResult::Welcome {
             player_id,
             reconnect_token,
@@ -25,9 +34,15 @@ fn render_response(request_id: u64, result: &ServerResult) {
                 println!("no rooms");
             } else {
                 for room in rooms {
+                    let best_of = room.target_score.saturating_mul(2).saturating_sub(1);
                     println!(
-                        "{} | {} | players {}/{} | spectators {}",
-                        room.id, room.name, room.players, room.max_players, room.spectators
+                        "{} | {} | players {}/{} | spectators {} | best of {}",
+                        room.id,
+                        room.name,
+                        room.players,
+                        room.max_players,
+                        room.spectators,
+                        best_of
                     );
                 }
             }
@@ -72,13 +87,16 @@ fn render_event(event: &ServerEvent) {
             RoomEvent::GameEnded { winner } => {
                 println!("[{room_id}] game ended; winner={winner:?}")
             }
+            RoomEvent::MatchReset { requested_by } => {
+                println!("[{room_id}] next match started by {requested_by}")
+            }
             RoomEvent::HostChanged { host_id } => println!("[{room_id}] host changed: {host_id:?}"),
         },
         ServerEvent::RoomSnapshot { room } => {
             let phase = match &room.phase {
                 RoomPhase::Lobby => "lobby".to_owned(),
                 RoomPhase::InRound { round, .. } => format!("round {round}"),
-                RoomPhase::Finished => "finished".to_owned(),
+                RoomPhase::Finished { winner } => format!("finished winner={winner:?}"),
             };
             println!("[snapshot] {} | {} | {}", room.id, room.name, phase);
             for player in &room.players {

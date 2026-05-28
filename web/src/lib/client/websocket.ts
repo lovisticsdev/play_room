@@ -8,6 +8,8 @@ type PendingRequest = {
 
 type Listener<T> = (value: T) => void;
 
+const REQUEST_TIMEOUT_MS = 10000;
+
 export class PlayRoomSocket {
   private socket: WebSocket | null = null;
   private nextRequestId = 1;
@@ -29,19 +31,23 @@ export class PlayRoomSocket {
       this.socket = socket;
 
       socket.addEventListener('open', () => resolve(), { once: true });
-      socket.addEventListener('error', (event) => {
-        this.errorListeners.forEach((l) => l(event));
-        reject(new Error(`WebSocket connection failed: ${url}`));
-      }, { once: true });
+      socket.addEventListener(
+        'error',
+        (event) => {
+          this.errorListeners.forEach((listener) => listener(event));
+          reject(new Error(`WebSocket connection failed: ${url}`));
+        },
+        { once: true },
+      );
 
       socket.addEventListener('message', (event) => this.handleMessage(event.data));
       socket.addEventListener('close', (event) => {
-        this.pending.forEach(({ reject, timeoutId }) => {
+        this.pending.forEach(({ reject: rejectPending, timeoutId }) => {
           clearTimeout(timeoutId);
-          reject(new Error('WebSocket closed'));
+          rejectPending(new Error('WebSocket closed'));
         });
         this.pending.clear();
-        this.closeListeners.forEach((l) => l(event));
+        this.closeListeners.forEach((listener) => listener(event));
       });
     });
   }
@@ -49,14 +55,16 @@ export class PlayRoomSocket {
   request(request: ClientRequest): Promise<ServerResult> {
     if (!this.isOpen) return Promise.reject(new Error('Socket is not open'));
 
-    const request_id = this.nextRequestId++;
+    const request_id = this.nextRequestId;
+    this.nextRequestId += 1;
+
     const envelope: ClientEnvelope = { request_id, request };
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.pending.delete(request_id);
         reject(new Error(`Request timeout: ${request_id}`));
-      }, 10000);
+      }, REQUEST_TIMEOUT_MS);
 
       this.pending.set(request_id, { resolve, reject, timeoutId });
       this.socket?.send(JSON.stringify(envelope));
@@ -92,27 +100,25 @@ export class PlayRoomSocket {
 
   private handleMessage(raw: unknown): void {
     let message: ServerMessage;
+
     try {
       message = JSON.parse(String(raw)) as ServerMessage;
-    } catch (err) {
-      console.error('Failed to parse WebSocket message:', err);
+    } catch {
       return;
     }
 
-    this.messageListeners.forEach((l) => l(message));
+    this.messageListeners.forEach((listener) => listener(message));
 
     if (message.kind === 'response') {
       const pending = this.pending.get(message.request_id);
-      if (pending) {
-        clearTimeout(pending.timeoutId);
-        this.pending.delete(message.request_id);
-        pending.resolve(message.result);
-      }
-    } else if (message.kind === 'event') {
-      this.eventListeners.forEach((l) => l(message.event));
+      if (!pending) return;
+
+      clearTimeout(pending.timeoutId);
+      this.pending.delete(message.request_id);
+      pending.resolve(message.result);
+      return;
     }
+
+    this.eventListeners.forEach((listener) => listener(message.event));
   }
 }
-
-// Singleton export to be configured by the Dispatcher/Root
-export const socket = new PlayRoomSocket();
