@@ -538,6 +538,11 @@ fn slugify(value: &str) -> String {
 mod tests {
     use super::*;
 
+    fn connect_named(manager: &mut RoomManager, name: &str) -> ConnectedPlayer {
+        let (tx, _) = crate::broadcast::channel();
+        manager.connect(name.to_owned(), None, tx)
+    }
+
     #[test]
     fn joins_room_by_exact_name_when_id_is_not_used() {
         let mut manager = RoomManager::default();
@@ -734,6 +739,111 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn leaving_room_releases_display_name_for_that_room() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &room_id).unwrap();
+
+        manager.leave_current_room(&alice.player_id).unwrap();
+
+        assert!(!room_has_player(&manager, &room_id, &alice.player_id));
+        let other_alice = connect_named(&mut manager, "alice");
+        let messages = manager.join_room(&other_alice.player_id, &room_id).unwrap();
+
+        assert!(!messages.is_empty());
+        assert!(room_has_player(&manager, &room_id, &other_alice.player_id));
+    }
+
+    #[test]
+    fn player_can_return_to_previous_room_after_moving_away() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let carol = connect_named(&mut manager, "Carol");
+        let (old_room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &old_room_id).unwrap();
+        let (new_room_id, _) = manager
+            .create_room(&carol.player_id, "otherroom".to_owned(), None)
+            .unwrap();
+
+        manager.join_room(&alice.player_id, &new_room_id).unwrap();
+        assert!(!room_has_player(&manager, &old_room_id, &alice.player_id));
+
+        manager.join_room(&alice.player_id, &old_room_id).unwrap();
+
+        assert_eq!(
+            manager.player_rooms.get(&alice.player_id),
+            Some(&old_room_id)
+        );
+        assert!(room_has_player(&manager, &old_room_id, &alice.player_id));
+        assert!(!room_has_player(&manager, &new_room_id, &alice.player_id));
+    }
+
+    #[test]
+    fn moving_between_rooms_releases_display_name_in_previous_room() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let carol = connect_named(&mut manager, "Carol");
+        let (old_room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &old_room_id).unwrap();
+        let (new_room_id, _) = manager
+            .create_room(&carol.player_id, "otherroom".to_owned(), None)
+            .unwrap();
+
+        manager.join_room(&alice.player_id, &new_room_id).unwrap();
+        let other_alice = connect_named(&mut manager, "alice");
+        let messages = manager
+            .join_room(&other_alice.player_id, &old_room_id)
+            .unwrap();
+
+        assert!(!messages.is_empty());
+        assert!(room_has_player(&manager, &new_room_id, &alice.player_id));
+        assert!(room_has_player(
+            &manager,
+            &old_room_id,
+            &other_alice.player_id
+        ));
+    }
+
+    #[test]
+    fn spectator_names_are_checked_against_all_room_members() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let mira = connect_named(&mut manager, "Mira");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+
+        let alice_clone = connect_named(&mut manager, "alice");
+        let participant_conflict = manager
+            .spectate_room(&alice_clone.player_id, &room_id)
+            .unwrap_err();
+        assert_eq!(
+            participant_conflict.code(),
+            Some(&ErrorCode::PlayerNameExists)
+        );
+
+        manager.spectate_room(&mira.player_id, &room_id).unwrap();
+        let mira_clone = connect_named(&mut manager, "mira");
+        let spectator_conflict = manager
+            .spectate_room(&mira_clone.player_id, &room_id)
+            .unwrap_err();
+
+        assert_eq!(
+            spectator_conflict.code(),
+            Some(&ErrorCode::PlayerNameExists)
+        );
+    }
     #[test]
     fn reconnect_returns_room_snapshot_to_reconnecting_player() {
         let mut manager = RoomManager::default();

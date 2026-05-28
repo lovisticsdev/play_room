@@ -626,6 +626,90 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_names_are_rejected_across_participants_and_spectators() {
+        let host = Player::participant(PlayerId::new("host"), "Alex");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+
+        let spectator_err = room
+            .apply(RoomCommand::Join {
+                player: Player::spectator(PlayerId::new("watcher"), "alex"),
+            })
+            .unwrap_err();
+        assert_eq!(
+            spectator_err,
+            CoreError::DuplicatePlayerName("alex".to_owned())
+        );
+
+        room.apply(RoomCommand::Join {
+            player: Player::spectator(PlayerId::new("mira"), "Mira"),
+        })
+        .unwrap();
+
+        let participant_err = room
+            .apply(RoomCommand::Join {
+                player: Player::participant(PlayerId::new("guest"), "mira"),
+            })
+            .unwrap_err();
+        assert_eq!(
+            participant_err,
+            CoreError::DuplicatePlayerName("mira".to_owned())
+        );
+    }
+
+    #[test]
+    fn duplicate_names_are_rejected_between_spectators() {
+        let host = Player::participant(PlayerId::new("host"), "Host");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+        room.apply(RoomCommand::Join {
+            player: Player::spectator(PlayerId::new("watcher-one"), "Mira"),
+        })
+        .unwrap();
+
+        let err = room
+            .apply(RoomCommand::Join {
+                player: Player::spectator(PlayerId::new("watcher-two"), "mira"),
+            })
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::DuplicatePlayerName("mira".to_owned()));
+    }
+
+    #[test]
+    fn finished_match_rejects_ready_and_moves_until_host_resets() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1000);
+        alice_wins_round(&mut room, 2000);
+
+        let ready_err = room
+            .apply(RoomCommand::SetReady {
+                player_id: PlayerId::new("alice"),
+                ready: true,
+                now_ms: 3000,
+            })
+            .unwrap_err();
+        assert_eq!(ready_err, CoreError::RoomFinished);
+
+        let move_err = room
+            .apply(RoomCommand::SubmitMove {
+                player_id: PlayerId::new("alice"),
+                mv: Move::Rock,
+                now_ms: 3001,
+            })
+            .unwrap_err();
+        assert_eq!(move_err, CoreError::RoundNotActive);
+
+        room.apply(RoomCommand::StartNextMatch {
+            player_id: PlayerId::new("alice"),
+        })
+        .unwrap();
+        ready(&mut room, "alice", 4000);
+        ready(&mut room, "bob", 4000);
+
+        assert!(matches!(room.phase(), RoomPhase::InRound { round: 1, .. }));
+    }
+    #[test]
     fn best_of_three_finishes_when_a_player_reaches_two_points() {
         let mut room = two_player_room();
 
