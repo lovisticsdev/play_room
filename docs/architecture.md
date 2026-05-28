@@ -33,7 +33,7 @@ Room membership is tied to player identity, not the transport connection. A disc
 
 ## Room Ownership
 
-Room names are unique server-wide, case-insensitively, so name-based joining is predictable. Display names are unique inside a room, including disconnected players, so scoreboards, event logs, and reconnect messages stay clear.
+Room names are unique server-wide, case-insensitively, so name-based joining is predictable. Display names are unique inside a room, including disconnected players, so scoreboards, match notifications, and reconnect messages stay clear.
 
 When a host leaves, the room promotes another remaining player, preferring connected participants. When the last player leaves, the room is removed from the registry.
 
@@ -43,6 +43,6 @@ Rooms default to Best of 3. A finished room keeps its final scoreboard and winne
 
 ## Browser Direction
 
-The browser client should now be treated as the main experience. Connection and room browsing should move into a modal/drawer, while the main screen focuses on the active room, game board, scoreboard, player/spectator lists, and event log.
+The browser client should now be treated as the main experience. Connection and room browsing should move into a modal/drawer, while the main screen focuses on the active room, game board, scoreboard, player/spectator lists, and transient match notifications.
 
 See [web-ui-plan.md](web-ui-plan.md) for the planned UI structure.

@@ -67,7 +67,7 @@ Reconnect can fail when the token is unknown, the server restarted without sessi
 
 Room updates are broadcast as events and snapshots:
 
-- events explain what just happened, such as joined, left, ready, move accepted, host changed, round resolved, game ended, or match reset
+- events explain what just happened, such as joined, left, ready, move accepted, host changed, round resolved, game ended, or match reset. Move-accepted events intentionally identify the player but not the selected move; submitted moves are revealed only in the round result.
 - snapshots are authoritative and should repair any stale local client state
 
 Clients should use events for the live feed and snapshots for rendered truth.

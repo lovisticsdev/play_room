@@ -277,7 +277,6 @@ impl GameRoom {
         self.moves.insert(player_id.clone(), mv);
         let mut events = vec![RoomEvent::MoveAccepted {
             player_id: player_id.clone(),
-            mv,
         }];
         if self.all_active_moves_submitted() {
             events.extend(self.resolve_round(RoundEndReason::AllMovesSubmitted)?);

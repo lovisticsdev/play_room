@@ -82,7 +82,7 @@ export type RoomEvent =
   | { event: 'ready_changed'; player_id: PlayerId; ready: boolean }
   | { event: 'role_changed'; player_id: PlayerId; role: PlayerRole }
   | { event: 'round_started'; round: number; deadline_ms: number }
-  | { event: 'move_accepted'; player_id: PlayerId; mv: Move }
+  | { event: 'move_accepted'; player_id: PlayerId }
   | { event: 'round_resolved'; result: RoundResult }
   | { event: 'game_ended'; winner: PlayerId | null }
   | { event: 'match_reset'; requested_by: PlayerId }

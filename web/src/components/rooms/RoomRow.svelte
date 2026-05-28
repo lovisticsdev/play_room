@@ -1,33 +1,57 @@
 <script lang="ts">
   import type { RoomSummary } from '../../lib/protocol/types';
   import { roomPhaseTag, roomSummaryMeta, type RoomAction } from '../../lib/view/room-selectors';
-  import { playRoomClient } from '../../lib/client/play-room-client';
+  import { isPlayRoomRequestError, playRoomClient } from '../../lib/client/play-room-client';
   import Button from '../ui/Button.svelte';
 
   export let room: RoomSummary;
   export let action: RoomAction;
 
+  let busy = false;
+  let error: string | null = null;
+  let warning = false;
+
   $: actionLabel = action === 'current' ? 'Current' : action === 'join' ? 'Join' : 'Watch';
 
   async function act() {
-    if (action === 'current') return;
-    if (action === 'join') {
-      await playRoomClient.joinRoom(room.id);
-      return;
+    if (action === 'current' || busy) return;
+
+    busy = true;
+    error = null;
+    warning = false;
+
+    try {
+      if (action === 'join') {
+        await playRoomClient.joinRoom(room.id);
+        return;
+      }
+      await playRoomClient.spectateRoom(room.id);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Room action failed';
+      warning = isPlayRoomRequestError(err) && err.code === 'player_name_exists';
+    } finally {
+      busy = false;
     }
-    await playRoomClient.spectateRoom(room.id);
   }
 </script>
 
-<div class="room-row" class:current={action === 'current'}>
-  <div class="room-row-main">
-    <strong>{room.name}</strong>
-    <span>{roomPhaseTag(room.phase)}</span>
+<div class="room-row-wrap">
+  <div class="room-row" class:current={action === 'current'}>
+    <div class="room-row-main">
+      <strong>{room.name}</strong>
+      <span>{roomPhaseTag(room.phase)}</span>
+    </div>
+    <div class="room-row-meta">
+      <span>Players {room.players} / {room.max_players}</span>
+      <span>Watchers {room.spectators}</span>
+      <span>{roomSummaryMeta(room)}</span>
+    </div>
+    <Button variant={action === 'watch' ? 'secondary' : 'primary'} disabled={action === 'current' || busy} onclick={act}>
+      {busy ? 'Working...' : actionLabel}
+    </Button>
   </div>
-  <div class="room-row-meta">
-    <span>Players {room.players} / {room.max_players}</span>
-    <span>Watchers {room.spectators}</span>
-    <span>{roomSummaryMeta(room)}</span>
-  </div>
-  <Button variant={action === 'watch' ? 'secondary' : 'primary'} disabled={action === 'current'} onclick={act}>{actionLabel}</Button>
+
+  {#if error}
+    <div class={warning ? 'form-warning room-row-message' : 'form-error room-row-message'}>{error}</div>
+  {/if}
 </div>

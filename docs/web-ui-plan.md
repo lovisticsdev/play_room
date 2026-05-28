@@ -24,7 +24,7 @@ Main match area
   room name/code | phase | countdown | game board | move state | result state
 
 Right rail
-  participants with scores | spectators | event log | leave/settings
+  participants with scores | spectators | leave/settings, plus transient notifications
 ```
 
 Connection, reconnect, create room, join room, and room browsing should move into a modal or drawer opened from the `Rooms` button. That keeps room discovery from competing with active play.
@@ -84,7 +84,7 @@ Manual reconnect token entry should remain available in the modal/session area f
 
 1. Convert connection and room browsing into a modal/drawer.
 2. Make the active room the permanent main surface.
-3. Rebuild the right rail around participants, spectators, and event log.
+3. Rebuild the right rail around participants, spectators, and room actions, with transient notifications for match events.
 4. Add local reconnect-token persistence and automatic reconnect.
 5. Add room-name/player-name conflict messaging with suggested alternatives.
 6. Polish game-state presentation: move locked, timeout, result, host transfer, disconnected player.

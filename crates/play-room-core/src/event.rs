@@ -1,4 +1,4 @@
-use crate::game::{Move, RoundResult};
+use crate::game::RoundResult;
 use crate::ids::PlayerId;
 use crate::player::PlayerRole;
 use serde::{Deserialize, Serialize};
@@ -34,7 +34,6 @@ pub enum RoomEvent {
     },
     MoveAccepted {
         player_id: PlayerId,
-        mv: Move,
     },
     RoundResolved {
         result: RoundResult,

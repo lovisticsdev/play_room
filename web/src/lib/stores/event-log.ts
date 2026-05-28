@@ -10,31 +10,48 @@ export interface EventLogEntry {
   raw?: unknown;
 }
 
-const MAX_LOG_ENTRIES = 120;
+const MAX_VISIBLE_NOTIFICATIONS = 5;
+const DEFAULT_TTL_MS = 4200;
+const ERROR_TTL_MS = 6800;
 let nextLogId = 1;
 
 function createEventLogStore() {
   const { subscribe, set, update } = writable<{ logs: EventLogEntry[] }>({ logs: [] });
+  const timers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  function remove(id: number) {
+    const timer = timers.get(id);
+    if (timer) clearTimeout(timer);
+    timers.delete(id);
+    update((state) => ({ logs: state.logs.filter((entry) => entry.id !== id) }));
+  }
+
+  function clearAll() {
+    timers.forEach((timer) => clearTimeout(timer));
+    timers.clear();
+    set({ logs: [] });
+  }
 
   return {
     subscribe,
-    clear: () => set({ logs: [] }),
+    clear: clearAll,
+    dismiss: remove,
     push: (level: LogLevel, message: string, raw?: unknown) => {
-      update((state) => {
-        const entry: EventLogEntry = {
-          id: nextLogId,
-          at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          level,
-          message,
-          raw,
-        };
+      const entry: EventLogEntry = {
+        id: nextLogId,
+        at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        level,
+        message,
+        raw,
+      };
+      nextLogId += 1;
 
-        nextLogId += 1;
+      update((state) => ({
+        logs: [entry, ...state.logs].slice(0, MAX_VISIBLE_NOTIFICATIONS),
+      }));
 
-        return {
-          logs: [entry, ...state.logs].slice(0, MAX_LOG_ENTRIES),
-        };
-      });
+      const ttl = level === 'error' || level === 'warning' ? ERROR_TTL_MS : DEFAULT_TTL_MS;
+      timers.set(entry.id, setTimeout(() => remove(entry.id), ttl));
     },
   };
 }

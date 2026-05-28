@@ -1,5 +1,4 @@
 import type { PlayerId, RoomEvent, RoomSnapshot, RoundOutcome } from '../protocol/types';
-import { moveLabel } from '../protocol/rules';
 
 function nameForPlayer(room: RoomSnapshot | null, playerId: PlayerId | null): string {
   if (!playerId) return 'No one';
@@ -30,7 +29,7 @@ export function formatRoomEvent(event: RoomEvent, room: RoomSnapshot | null): st
     case 'round_started':
       return `Round ${event.round} started`;
     case 'move_accepted':
-      return `${nameForPlayer(room, event.player_id)} chose ${moveLabel(event.mv)}`;
+      return `${nameForPlayer(room, event.player_id)} locked a move`;
     case 'round_resolved':
       return outcomeText(room, event.result.outcome);
     case 'game_ended':

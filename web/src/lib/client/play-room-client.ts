@@ -302,10 +302,6 @@ class PlayRoomClient {
         const state = get(currentRoomStore);
         eventLogStore.push('protocol', formatRoomEvent(event.event, state.room), event);
 
-        if (event.event.event === 'move_accepted' && event.event.player_id === get(sessionStore).playerId) {
-          currentRoomStore.setLocalMove(event.event.mv);
-        }
-
         if (event.event.event === 'round_started' || event.event.event === 'match_reset') {
           currentRoomStore.clearRoundState();
         }

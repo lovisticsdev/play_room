@@ -22,7 +22,7 @@ The browser client is the primary user-facing experience. The terminal client re
 
 The next product pass should make active play the center of the app:
 
-- the main screen belongs to the current room, game board, scoreboard, players, spectators, and event log
+- the main screen belongs to the current room, game board, scoreboard, players, spectators, and transient match notifications
 - connection, reconnect, room browsing, room creation, and join-by-code move into a `Rooms` modal or drawer
 - spectators are shown separately from participants and are not rendered as score-zero competitors
 - reconnect tokens are stored per tab for automatic refresh recovery, with manual token entry available for testing/recovery
@@ -140,7 +140,7 @@ Then submit moves from each client:
 /move scissors
 ```
 
-The server broadcasts room events and authoritative snapshots as the match progresses. Rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and event logs remain clear.
+The server broadcasts room events and authoritative snapshots as the match progresses. Rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and match notifications remain clear. Move submissions are acknowledged without revealing the selected move until the round resolves.
 
 ## Client Commands
 

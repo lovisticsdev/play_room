@@ -77,7 +77,7 @@ fn render_event(event: &ServerEvent) {
             RoomEvent::RoundStarted { round, deadline_ms } => {
                 println!("[{room_id}] round {round} started; deadline_ms={deadline_ms}")
             }
-            RoomEvent::MoveAccepted { player_id, .. } => {
+            RoomEvent::MoveAccepted { player_id } => {
                 println!("[{room_id}] move accepted from {player_id}")
             }
             RoomEvent::RoundResolved { result } => println!(
