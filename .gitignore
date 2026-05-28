@@ -25,3 +25,4 @@
 /web/.vite/
 
 /package-lock.json
+ print_tree.py
