@@ -2,10 +2,13 @@ use crate::broadcast::{send, OutboundTx};
 use crate::identity::{new_player_id, new_room_id, new_session_token};
 use play_room_core::{
     CoreError, GameRoom, GameRules, Player, PlayerId, PlayerRole, RoomCommand, RoomEvent, RoomId,
-    RoomSummary, SessionToken,
+    RoomSnapshot, RoomSummary, SessionToken,
 };
 use play_room_protocol::{ErrorCode, ServerEvent, ServerMessage, ServerResult, PROTOCOL_VERSION};
 use std::collections::BTreeMap;
+
+pub const PARTICIPANT_SEAT_GRACE_MS: u64 = 90_000;
+pub const SPECTATOR_NAME_GRACE_MS: u64 = 90_000;
 
 #[derive(Default)]
 pub struct RoomManager {
@@ -14,6 +17,8 @@ pub struct RoomManager {
     player_names: BTreeMap<PlayerId, String>,
     player_rooms: BTreeMap<PlayerId, RoomId>,
     tokens: BTreeMap<SessionToken, PlayerId>,
+    seat_expirations: BTreeMap<PlayerId, SeatExpiry>,
+    spectator_expirations: BTreeMap<PlayerId, SpectatorExpiry>,
 }
 
 #[derive(Clone, Debug)]
@@ -21,6 +26,33 @@ pub struct ConnectedPlayer {
     pub player_id: PlayerId,
     pub reconnect_token: SessionToken,
     pub messages: OutboundMessages,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeatExpiry {
+    pub room_id: RoomId,
+    pub player_id: PlayerId,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SpectatorExpiry {
+    pub room_id: RoomId,
+    pub player_id: PlayerId,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExpiryOutcome {
+    pub messages: OutboundMessages,
+    pub spectator_expiry: Option<SpectatorExpiry>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DisconnectOutcome {
+    pub messages: OutboundMessages,
+    pub seat_expiry: Option<SeatExpiry>,
+    pub spectator_expiry: Option<SpectatorExpiry>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -149,6 +181,8 @@ impl RoomManager {
             if let Some(player_id) = self.tokens.get(&token).cloned() {
                 self.sessions.insert(player_id.clone(), tx);
                 self.player_names.entry(player_id.clone()).or_insert(name);
+                self.seat_expirations.remove(&player_id);
+                self.spectator_expirations.remove(&player_id);
                 let messages = if let Some(room_id) = self.player_rooms.get(&player_id).cloned() {
                     let events = if let Some(room) = self.rooms.get_mut(&room_id) {
                         room.apply(RoomCommand::Reconnect {
@@ -183,18 +217,33 @@ impl RoomManager {
         }
     }
 
-    pub fn disconnect(&mut self, player_id: &PlayerId) -> OutboundMessages {
+    pub fn disconnect(&mut self, player_id: &PlayerId, now_ms: u64) -> DisconnectOutcome {
         self.sessions.remove(player_id);
         if let Some(room_id) = self.player_rooms.get(player_id).cloned() {
             if let Some(room) = self.rooms.get_mut(&room_id) {
                 if let Ok(events) = room.apply(RoomCommand::Disconnect {
                     player_id: player_id.clone(),
                 }) {
-                    return self.room_messages(&room_id, events);
+                    let seat_expiry =
+                        self.schedule_seat_expiry_if_needed(&room_id, player_id, now_ms);
+                    let spectator_expiry =
+                        self.schedule_spectator_expiry_if_needed(&room_id, player_id, now_ms);
+                    let messages = self.room_messages(&room_id, events);
+                    return DisconnectOutcome {
+                        messages,
+                        seat_expiry,
+                        spectator_expiry,
+                    };
                 }
             }
         }
-        Vec::new()
+        self.seat_expirations.remove(player_id);
+        self.spectator_expirations.remove(player_id);
+        DisconnectOutcome {
+            messages: Vec::new(),
+            seat_expiry: None,
+            spectator_expiry: None,
+        }
     }
 
     pub fn send_to(&self, player_id: &PlayerId, message: ServerMessage) {
@@ -385,6 +434,8 @@ impl RoomManager {
                 player_id: player_id.clone(),
             })
             .map_err(RoomManagerError::from_core)?;
+        self.seat_expirations.remove(player_id);
+        self.spectator_expirations.remove(player_id);
         self.player_rooms.remove(player_id);
         let messages = self.room_messages(room_id, events);
         let remove_room = self
@@ -439,11 +490,156 @@ impl RoomManager {
         Ok(self.room_messages(room_id, events))
     }
 
+    pub fn expire_participant_seat(
+        &mut self,
+        expiry: &SeatExpiry,
+    ) -> Result<ExpiryOutcome, RoomManagerError> {
+        let Some(current) = self.seat_expirations.get(&expiry.player_id) else {
+            return Ok(ExpiryOutcome {
+                messages: Vec::new(),
+                spectator_expiry: None,
+            });
+        };
+        if current != expiry {
+            return Ok(ExpiryOutcome {
+                messages: Vec::new(),
+                spectator_expiry: None,
+            });
+        }
+        self.seat_expirations.remove(&expiry.player_id);
+
+        let Some(room) = self.rooms.get_mut(&expiry.room_id) else {
+            return Ok(ExpiryOutcome {
+                messages: Vec::new(),
+                spectator_expiry: None,
+            });
+        };
+        let events = room
+            .apply(RoomCommand::ExpireParticipantSeat {
+                player_id: expiry.player_id.clone(),
+            })
+            .map_err(RoomManagerError::from_core)?;
+        if events.is_empty() {
+            return Ok(ExpiryOutcome {
+                messages: Vec::new(),
+                spectator_expiry: None,
+            });
+        }
+
+        let spectator_expiry = self.schedule_spectator_expiry_if_needed(
+            &expiry.room_id,
+            &expiry.player_id,
+            expiry.expires_at_ms,
+        );
+        let messages = self.room_messages(&expiry.room_id, events);
+        Ok(ExpiryOutcome {
+            messages,
+            spectator_expiry,
+        })
+    }
+
+    pub fn expire_spectator(
+        &mut self,
+        expiry: &SpectatorExpiry,
+    ) -> Result<OutboundMessages, RoomManagerError> {
+        let Some(current) = self.spectator_expirations.get(&expiry.player_id) else {
+            return Ok(Vec::new());
+        };
+        if current != expiry {
+            return Ok(Vec::new());
+        }
+        self.spectator_expirations.remove(&expiry.player_id);
+
+        let Some(room) = self.rooms.get(&expiry.room_id) else {
+            self.player_rooms.remove(&expiry.player_id);
+            return Ok(Vec::new());
+        };
+        let should_leave = room.snapshot().players.into_iter().any(|player| {
+            player.id == expiry.player_id
+                && player.role == PlayerRole::Spectator
+                && !player.connected
+        });
+        if !should_leave {
+            return Ok(Vec::new());
+        }
+
+        self.leave_room(&expiry.player_id, &expiry.room_id)
+    }
+
+    fn schedule_seat_expiry_if_needed(
+        &mut self,
+        room_id: &RoomId,
+        player_id: &PlayerId,
+        now_ms: u64,
+    ) -> Option<SeatExpiry> {
+        let should_expire = self
+            .rooms
+            .get(room_id)
+            .and_then(|room| {
+                room.snapshot()
+                    .players
+                    .into_iter()
+                    .find(|player| &player.id == player_id)
+            })
+            .map(|player| player.role == PlayerRole::Participant && !player.connected)
+            .unwrap_or(false);
+
+        if !should_expire {
+            self.seat_expirations.remove(player_id);
+            return None;
+        }
+
+        let expiry = SeatExpiry {
+            room_id: room_id.clone(),
+            player_id: player_id.clone(),
+            expires_at_ms: now_ms.saturating_add(PARTICIPANT_SEAT_GRACE_MS),
+        };
+        self.seat_expirations
+            .insert(player_id.clone(), expiry.clone());
+        Some(expiry)
+    }
+
+    fn schedule_spectator_expiry_if_needed(
+        &mut self,
+        room_id: &RoomId,
+        player_id: &PlayerId,
+        now_ms: u64,
+    ) -> Option<SpectatorExpiry> {
+        let should_expire = self
+            .rooms
+            .get(room_id)
+            .and_then(|room| {
+                room.snapshot()
+                    .players
+                    .into_iter()
+                    .find(|player| &player.id == player_id)
+            })
+            .map(|player| player.role == PlayerRole::Spectator && !player.connected)
+            .unwrap_or(false);
+
+        if !should_expire {
+            self.spectator_expirations.remove(player_id);
+            return None;
+        }
+
+        let expiry = SpectatorExpiry {
+            room_id: room_id.clone(),
+            player_id: player_id.clone(),
+            expires_at_ms: now_ms.saturating_add(SPECTATOR_NAME_GRACE_MS),
+        };
+        self.spectator_expirations
+            .insert(player_id.clone(), expiry.clone());
+        Some(expiry)
+    }
     pub fn room_messages(&self, room_id: &RoomId, events: Vec<RoomEvent>) -> OutboundMessages {
         let Some(room) = self.rooms.get(room_id) else {
             return Vec::new();
         };
         let recipients = room.player_ids();
+        let Some(room_snapshot) = self.room_snapshot(room_id) else {
+            return Vec::new();
+        };
+
         let mut messages = Vec::new();
         for event in events {
             let msg = ServerMessage::Event {
@@ -458,13 +654,30 @@ impl RoomManager {
         }
         let snapshot = ServerMessage::Event {
             event: ServerEvent::RoomSnapshot {
-                room: room.snapshot(),
+                room: room_snapshot,
             },
         };
         for recipient in recipients {
             messages.push((recipient, snapshot.clone()));
         }
         messages
+    }
+
+    fn room_snapshot(&self, room_id: &RoomId) -> Option<RoomSnapshot> {
+        let mut snapshot = self.rooms.get(room_id)?.snapshot();
+        for player in &mut snapshot.players {
+            player.participant_seat_expires_at_ms = self
+                .seat_expirations
+                .get(&player.id)
+                .filter(|expiry| &expiry.room_id == room_id)
+                .map(|expiry| expiry.expires_at_ms);
+            player.spectator_expires_at_ms = self
+                .spectator_expirations
+                .get(&player.id)
+                .filter(|expiry| &expiry.room_id == room_id)
+                .map(|expiry| expiry.expires_at_ms);
+        }
+        Some(snapshot)
     }
 
     pub fn flush_messages(&self, messages: OutboundMessages) {
@@ -612,7 +825,7 @@ mod tests {
         let (room_id, _) = manager
             .create_room(&alice.player_id, "testroom".to_owned(), None)
             .unwrap();
-        manager.disconnect(&alice.player_id);
+        manager.disconnect(&alice.player_id, 1_000);
 
         let (other_tx, _) = crate::broadcast::channel();
         let other = manager.connect("alice".to_owned(), None, other_tx);
@@ -844,6 +1057,301 @@ mod tests {
             Some(&ErrorCode::PlayerNameExists)
         );
     }
+
+    #[test]
+    fn disconnected_spectator_gets_name_expiry_in_snapshot() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let mira = connect_named(&mut manager, "Mira");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.spectate_room(&mira.player_id, &room_id).unwrap();
+
+        let outcome = manager.disconnect(&mira.player_id, 5_000);
+        let expiry = outcome.spectator_expiry.unwrap();
+        let snapshot = manager.room_snapshot(&room_id).unwrap();
+
+        assert!(outcome.seat_expiry.is_none());
+        assert_eq!(expiry.expires_at_ms, 95_000);
+        assert!(snapshot.players.iter().any(|player| {
+            player.id == mira.player_id && player.spectator_expires_at_ms == Some(95_000)
+        }));
+    }
+
+    #[test]
+    fn spectator_name_expiry_removes_disconnected_spectator_and_frees_name() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let mira = connect_named(&mut manager, "Mira");
+        let other_mira = connect_named(&mut manager, "mira");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.spectate_room(&mira.player_id, &room_id).unwrap();
+        let expiry = manager
+            .disconnect(&mira.player_id, 1_000)
+            .spectator_expiry
+            .unwrap();
+
+        let err = manager
+            .spectate_room(&other_mira.player_id, &room_id)
+            .unwrap_err();
+        assert_eq!(err.code(), Some(&ErrorCode::PlayerNameExists));
+
+        let messages = manager.expire_spectator(&expiry).unwrap();
+        let join_messages = manager
+            .spectate_room(&other_mira.player_id, &room_id)
+            .unwrap();
+
+        assert!(!messages.is_empty());
+        assert!(!room_has_player(&manager, &room_id, &mira.player_id));
+        assert!(!join_messages.is_empty());
+    }
+
+    #[test]
+    fn spectator_name_expiry_is_ignored_after_reconnect() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let mira = connect_named(&mut manager, "Mira");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.spectate_room(&mira.player_id, &room_id).unwrap();
+        let expiry = manager
+            .disconnect(&mira.player_id, 1_000)
+            .spectator_expiry
+            .unwrap();
+
+        let (tx, _) = crate::broadcast::channel();
+        manager.connect(String::new(), Some(mira.reconnect_token.clone()), tx);
+        let messages = manager.expire_spectator(&expiry).unwrap();
+        let snapshot = manager.room_snapshot(&room_id).unwrap();
+        let mira_view = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == mira.player_id)
+            .unwrap();
+
+        assert!(messages.is_empty());
+        assert_eq!(mira_view.role, PlayerRole::Spectator);
+        assert!(mira_view.connected);
+    }
+    #[test]
+    fn disconnected_participant_keeps_seat_until_expiry() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let carol = connect_named(&mut manager, "Carol");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &room_id).unwrap();
+
+        let outcome = manager.disconnect(&alice.player_id, 1_000);
+        let err = manager.join_room(&carol.player_id, &room_id).unwrap_err();
+
+        assert_eq!(err.code(), Some(&ErrorCode::RoomFull));
+        assert_eq!(
+            outcome
+                .seat_expiry
+                .as_ref()
+                .map(|expiry| expiry.expires_at_ms),
+            Some(91_000)
+        );
+        assert!(room_has_player(&manager, &room_id, &alice.player_id));
+    }
+
+    #[test]
+    fn disconnect_snapshot_includes_authoritative_seat_expiry() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &room_id).unwrap();
+
+        let outcome = manager.disconnect(&alice.player_id, 1_000);
+        let expiry = outcome.seat_expiry.unwrap();
+
+        assert!(outcome.messages.iter().any(|(_, message)| matches!(
+            message,
+            ServerMessage::Event {
+                event: ServerEvent::RoomSnapshot { room }
+            } if room.players.iter().any(|player|
+                player.id == alice.player_id
+                    && player.participant_seat_expires_at_ms == Some(expiry.expires_at_ms)
+            )
+        )));
+    }
+    #[test]
+    fn seat_expiry_demotes_disconnected_participant_and_frees_slot() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let mira = connect_named(&mut manager, "Mira");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &room_id).unwrap();
+        manager.spectate_room(&mira.player_id, &room_id).unwrap();
+        let expiry = manager
+            .disconnect(&alice.player_id, 1_000)
+            .seat_expiry
+            .unwrap();
+
+        let outcome = manager.expire_participant_seat(&expiry).unwrap();
+        let (_, events, _) = manager
+            .apply_to_current_room(
+                &mira.player_id,
+                RoomCommand::SetSpectator {
+                    player_id: mira.player_id.clone(),
+                    spectator: false,
+                },
+            )
+            .unwrap();
+        let room = manager.rooms.get(&room_id).unwrap();
+        let snapshot = room.snapshot();
+        let alice_view = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == alice.player_id)
+            .unwrap();
+        let mira_view = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == mira.player_id)
+            .unwrap();
+
+        assert!(!outcome.messages.is_empty());
+        assert!(outcome.spectator_expiry.is_some());
+        assert_eq!(alice_view.role, PlayerRole::Spectator);
+        assert!(!alice_view.connected);
+        assert_eq!(mira_view.role, PlayerRole::Participant);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::RoleChanged { player_id, role }
+                if player_id == &mira.player_id && role == &PlayerRole::Participant
+        )));
+    }
+
+    #[test]
+    fn seat_expiry_keeps_display_name_reserved_until_spectator_expiry() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let other_alice = connect_named(&mut manager, "alice");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &room_id).unwrap();
+        let expiry = manager
+            .disconnect(&alice.player_id, 1_000)
+            .seat_expiry
+            .unwrap();
+        let outcome = manager.expire_participant_seat(&expiry).unwrap();
+        let spectator_expiry = outcome.spectator_expiry.unwrap();
+
+        let err = manager
+            .spectate_room(&other_alice.player_id, &room_id)
+            .unwrap_err();
+        assert_eq!(err.code(), Some(&ErrorCode::PlayerNameExists));
+        assert!(err.message().contains("currently disconnected"));
+
+        manager.expire_spectator(&spectator_expiry).unwrap();
+        let messages = manager
+            .spectate_room(&other_alice.player_id, &room_id)
+            .unwrap();
+
+        assert_eq!(spectator_expiry.expires_at_ms, 181_000);
+        assert!(!room_has_player(&manager, &room_id, &alice.player_id));
+        assert!(!messages.is_empty());
+    }
+    #[test]
+    fn expired_player_reconnects_as_spectator() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &room_id).unwrap();
+        let expiry = manager
+            .disconnect(&alice.player_id, 1_000)
+            .seat_expiry
+            .unwrap();
+        let outcome = manager.expire_participant_seat(&expiry).unwrap();
+        assert!(outcome.spectator_expiry.is_some());
+
+        let (tx, _) = crate::broadcast::channel();
+        let reconnected = manager.connect(String::new(), Some(alice.reconnect_token.clone()), tx);
+        let room = manager.rooms.get(&room_id).unwrap();
+        let alice_view = room
+            .snapshot()
+            .players
+            .into_iter()
+            .find(|player| player.id == alice.player_id)
+            .unwrap();
+
+        assert_eq!(reconnected.player_id, alice.player_id);
+        assert_eq!(alice_view.role, PlayerRole::Spectator);
+        assert!(alice_view.connected);
+    }
+
+    #[test]
+    fn seat_expiry_is_ignored_after_reconnect() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &room_id).unwrap();
+        let expiry = manager
+            .disconnect(&alice.player_id, 1_000)
+            .seat_expiry
+            .unwrap();
+        let (tx, _) = crate::broadcast::channel();
+        manager.connect(String::new(), Some(alice.reconnect_token.clone()), tx);
+
+        let outcome = manager.expire_participant_seat(&expiry).unwrap();
+        let room = manager.rooms.get(&room_id).unwrap();
+        let alice_view = room
+            .snapshot()
+            .players
+            .into_iter()
+            .find(|player| player.id == alice.player_id)
+            .unwrap();
+
+        assert!(outcome.messages.is_empty());
+        assert!(outcome.spectator_expiry.is_none());
+        assert_eq!(alice_view.role, PlayerRole::Participant);
+        assert!(alice_view.connected);
+    }
+
+    #[test]
+    fn seat_expiry_is_ignored_after_leave() {
+        let mut manager = RoomManager::default();
+        let alice = connect_named(&mut manager, "Alice");
+        let bob = connect_named(&mut manager, "Bob");
+        let (room_id, _) = manager
+            .create_room(&alice.player_id, "testroom".to_owned(), None)
+            .unwrap();
+        manager.join_room(&bob.player_id, &room_id).unwrap();
+        let expiry = manager
+            .disconnect(&alice.player_id, 1_000)
+            .seat_expiry
+            .unwrap();
+        manager.leave_current_room(&alice.player_id).unwrap();
+
+        let outcome = manager.expire_participant_seat(&expiry).unwrap();
+
+        assert!(outcome.messages.is_empty());
+        assert!(outcome.spectator_expiry.is_none());
+        assert!(!room_has_player(&manager, &room_id, &alice.player_id));
+    }
+
     #[test]
     fn reconnect_returns_room_snapshot_to_reconnecting_player() {
         let mut manager = RoomManager::default();
@@ -852,7 +1360,7 @@ mod tests {
         let (room_id, _) = manager
             .create_room(&connected.player_id, "testroom".to_owned(), None)
             .unwrap();
-        manager.disconnect(&connected.player_id);
+        manager.disconnect(&connected.player_id, 1_000);
 
         let (reconnect_tx, _) = crate::broadcast::channel();
         let reconnected = manager.connect(

@@ -1,4 +1,4 @@
-use crate::room_manager::RoomManager;
+use crate::room_manager::{RoomManager, SeatExpiry, SpectatorExpiry};
 use play_room_core::RoomId;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,6 +24,41 @@ pub fn schedule_round_timeout(
         }
         let mut locked = manager.lock().await;
         if let Ok(messages) = locked.timeout_room(&room_id, round, now_ms()) {
+            locked.flush_messages(messages);
+        }
+    });
+}
+
+pub fn schedule_seat_expiry(manager: Arc<Mutex<RoomManager>>, expiry: SeatExpiry) {
+    tokio::spawn(async move {
+        let current = now_ms();
+        if expiry.expires_at_ms > current {
+            tokio::time::sleep(Duration::from_millis(expiry.expires_at_ms - current)).await;
+        }
+        let spectator_expiry = {
+            let mut locked = manager.lock().await;
+            match locked.expire_participant_seat(&expiry) {
+                Ok(outcome) => {
+                    locked.flush_messages(outcome.messages);
+                    outcome.spectator_expiry
+                }
+                Err(_) => None,
+            }
+        };
+        if let Some(expiry) = spectator_expiry {
+            schedule_spectator_expiry(manager.clone(), expiry);
+        }
+    });
+}
+
+pub fn schedule_spectator_expiry(manager: Arc<Mutex<RoomManager>>, expiry: SpectatorExpiry) {
+    tokio::spawn(async move {
+        let current = now_ms();
+        if expiry.expires_at_ms > current {
+            tokio::time::sleep(Duration::from_millis(expiry.expires_at_ms - current)).await;
+        }
+        let mut locked = manager.lock().await;
+        if let Ok(messages) = locked.expire_spectator(&expiry) {
             locked.flush_messages(messages);
         }
     });

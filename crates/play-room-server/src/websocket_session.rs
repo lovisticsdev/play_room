@@ -2,6 +2,7 @@ use crate::broadcast::{channel, send};
 use crate::errors::ServerError;
 use crate::room_manager::RoomManager;
 use crate::router::route;
+use crate::scheduler::{now_ms, schedule_seat_expiry, schedule_spectator_expiry};
 use futures_util::{SinkExt, StreamExt};
 use play_room_protocol::{
     decode_client, encode_server, ClientRequest, ServerMessage, ServerResult,
@@ -107,13 +108,19 @@ pub async fn handle_websocket_connection(
         }
     }
 
-    let messages = {
+    let outcome = {
         let mut locked = manager.lock().await;
-        locked.disconnect(&connected.player_id)
+        locked.disconnect(&connected.player_id, now_ms())
     };
     {
         let locked = manager.lock().await;
-        locked.flush_messages(messages);
+        locked.flush_messages(outcome.messages);
+    }
+    if let Some(expiry) = outcome.seat_expiry {
+        schedule_seat_expiry(manager.clone(), expiry);
+    }
+    if let Some(expiry) = outcome.spectator_expiry {
+        schedule_spectator_expiry(manager.clone(), expiry);
     }
 
     debug!(player_id = %connected.player_id, "websocket client disconnected");

@@ -21,6 +21,10 @@ pub struct PlayerView {
     pub ready: bool,
     pub connected: bool,
     pub score: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub participant_seat_expires_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spectator_expires_at_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

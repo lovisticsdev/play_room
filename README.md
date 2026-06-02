@@ -13,6 +13,7 @@ The browser client is the primary user-facing experience. The terminal client re
 - Participant-aware room flow with players and spectators
 - Best of 3 default match flow with timed rounds and timeout resolution
 - Reconnect tokens for client sessions
+- 90-second participant seat protection after disconnect, followed by spectator demotion and timed name cleanup
 - RPS and RPSLS move support
 - Unique room names, room-scoped display-name checks, and structured conflict errors
 - Workspace integration tests and executable scripted fixtures
@@ -140,7 +141,7 @@ Then submit moves from each client:
 /move scissors
 ```
 
-The server broadcasts room events and authoritative snapshots as the match progresses. Rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and match notifications remain clear. Move submissions are acknowledged without revealing the selected move until the round resolves.
+The server broadcasts room events and authoritative snapshots as the match progresses. Rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and match notifications remain clear. Disconnected participants keep their seat for 90 seconds; after that they become disconnected spectators for another 90-second name-reservation window. If they still do not reconnect, the server removes them from the room and frees the display name. Move submissions are acknowledged without revealing the selected move until the round resolves.
 
 ## Client Commands
 
@@ -201,7 +202,7 @@ npm run check
 npm run build
 ```
 
-The integration suite covers protocol round-trips, two-player matches, spectator restrictions, reconnect flow, timeout resolution, and every JSON fixture in `examples/scripted_clients/`.
+The integration suite covers protocol round-trips, two-player matches, spectator restrictions, reconnect flow, timeout resolution, move privacy, disconnect expiry behavior, and every JSON fixture in `examples/scripted_clients/`.
 
 ## Repository Notes
 

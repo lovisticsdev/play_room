@@ -94,6 +94,9 @@ impl GameRoom {
             RoomCommand::Disconnect { player_id } => self.disconnect(&player_id),
             RoomCommand::Reconnect { player_id } => self.reconnect(&player_id),
             RoomCommand::TimeoutRound { round, now_ms } => self.timeout_round(round, now_ms),
+            RoomCommand::ExpireParticipantSeat { player_id } => {
+                self.expire_participant_seat(&player_id)
+            }
             RoomCommand::StartNextMatch { player_id } => self.start_next_match(&player_id),
         }
     }
@@ -313,6 +316,36 @@ impl GameRoom {
         }])
     }
 
+    fn expire_participant_seat(
+        &mut self,
+        player_id: &PlayerId,
+    ) -> Result<Vec<RoomEvent>, CoreError> {
+        {
+            let player = self
+                .players
+                .get_mut(player_id)
+                .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
+            if player.connected || player.role != PlayerRole::Participant {
+                return Ok(Vec::new());
+            }
+            player.role = PlayerRole::Spectator;
+            player.ready = false;
+        }
+
+        self.moves.remove(player_id);
+        let mut events = vec![RoomEvent::RoleChanged {
+            player_id: player_id.clone(),
+            role: PlayerRole::Spectator,
+        }];
+        if self.host_id.as_ref() == Some(player_id) {
+            self.host_id = self.next_host_id();
+            events.push(RoomEvent::HostChanged {
+                host_id: self.host_id.clone(),
+            });
+        }
+        Ok(events)
+    }
+
     fn timeout_round(&mut self, round: u32, now_ms: u64) -> Result<Vec<RoomEvent>, CoreError> {
         match self.phase {
             RoomPhase::InRound {
@@ -454,6 +487,8 @@ impl GameRoom {
                 ready: player.ready,
                 connected: player.connected,
                 score: player.score,
+                participant_seat_expires_at_ms: None,
+                spectator_expires_at_ms: None,
             })
     }
 
@@ -525,6 +560,8 @@ impl GameRoom {
                 ready: p.ready,
                 connected: p.connected,
                 score: p.score,
+                participant_seat_expires_at_ms: None,
+                spectator_expires_at_ms: None,
             })
             .collect();
 
@@ -709,6 +746,75 @@ mod tests {
 
         assert!(matches!(room.phase(), RoomPhase::InRound { round: 1, .. }));
     }
+
+    #[test]
+    fn participant_seat_expiry_demotes_disconnected_player_to_spectator() {
+        let mut room = two_player_room();
+
+        room.apply(RoomCommand::Disconnect {
+            player_id: PlayerId::new("alice"),
+        })
+        .unwrap();
+        let events = room
+            .apply(RoomCommand::ExpireParticipantSeat {
+                player_id: PlayerId::new("alice"),
+            })
+            .unwrap();
+        let snapshot = room.snapshot();
+        let alice = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == PlayerId::new("alice"))
+            .unwrap();
+
+        assert_eq!(alice.role, PlayerRole::Spectator);
+        assert!(!alice.connected);
+        assert_eq!(snapshot.host_id, Some(PlayerId::new("bob")));
+        assert!(!snapshot
+            .scoreboard
+            .iter()
+            .any(|score| score.player_id == PlayerId::new("alice")));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::RoleChanged { player_id, role }
+                if player_id == &PlayerId::new("alice") && role == &PlayerRole::Spectator
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::HostChanged { host_id } if host_id == &Some(PlayerId::new("bob"))
+        )));
+    }
+
+    #[test]
+    fn participant_seat_expiry_is_noop_after_reconnect() {
+        let mut room = two_player_room();
+
+        room.apply(RoomCommand::Disconnect {
+            player_id: PlayerId::new("alice"),
+        })
+        .unwrap();
+        room.apply(RoomCommand::Reconnect {
+            player_id: PlayerId::new("alice"),
+        })
+        .unwrap();
+        let events = room
+            .apply(RoomCommand::ExpireParticipantSeat {
+                player_id: PlayerId::new("alice"),
+            })
+            .unwrap();
+        let snapshot = room.snapshot();
+        let alice = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == PlayerId::new("alice"))
+            .unwrap();
+
+        assert!(events.is_empty());
+        assert_eq!(alice.role, PlayerRole::Participant);
+        assert!(alice.connected);
+        assert_eq!(snapshot.host_id, Some(PlayerId::new("alice")));
+    }
+
     #[test]
     fn best_of_three_finishes_when_a_player_reaches_two_points() {
         let mut room = two_player_room();

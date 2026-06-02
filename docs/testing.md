@@ -10,7 +10,9 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 - Spectators cannot submit moves.
 - Spectators are excluded from the competitive scoreboard.
 - Disconnected participants remain visible when their session and score still matter.
-- Duplicate display names are rejected within a room, including spectators and disconnected players.
+- Disconnected participant seats are reserved for 90 seconds, then expire into disconnected spectators.
+- Disconnected spectators reserve their display name for 90 seconds, then leave the room automatically so the name can be reused.
+- Duplicate display names are rejected within a room, including spectators and disconnected players still inside their expiry windows.
 - A ready room starts a round exactly once.
 - Timeouts resolve active rounds and reject stale timeout commands.
 - Finished matches carry the winner in `RoomPhase::Finished`.
@@ -25,6 +27,8 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 - Duplicate disconnected display-name errors are explicit enough for reconnect guidance.
 - Moving between rooms preserves old-room leave events and snapshots.
 - Reconnect restores the same player identity when the token is valid.
+- Reconnect before participant-seat expiry preserves the active seat; reconnect after participant-seat expiry but before spectator-name expiry restores the identity as a spectator.
+- Expired spectator cleanup removes room membership and frees the display name.
 - Host transfer and empty-room cleanup remain consistent after leave events.
 
 ## Integration And Scenario Coverage

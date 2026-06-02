@@ -36,6 +36,9 @@ pub enum RoomCommand {
         round: u32,
         now_ms: u64,
     },
+    ExpireParticipantSeat {
+        player_id: PlayerId,
+    },
     StartNextMatch {
         player_id: PlayerId,
     },

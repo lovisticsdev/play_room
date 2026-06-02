@@ -1319,3 +1319,13 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+.player-row.reserved {
+  border-color: rgba(244, 179, 33, 0.52);
+  background:
+    linear-gradient(90deg, rgba(244, 179, 33, 0.08), transparent 60%),
+    rgba(2, 8, 13, 0.38);
+}
+
+.player-row.reserved .score-value {
+  color: var(--amber);
+}

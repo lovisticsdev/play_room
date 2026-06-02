@@ -18,6 +18,7 @@ import { connectionStore, DEFAULT_SERVER_URL } from '../stores/connection';
 import { currentRoomStore } from '../stores/current-room';
 import { eventLogStore } from '../stores/event-log';
 import { roomsStore } from '../stores/rooms';
+import { seatReservationsStore } from '../stores/seat-reservations';
 import { sessionStore } from '../stores/session';
 import { uiStore } from '../stores/ui';
 import {
@@ -53,6 +54,8 @@ class PlayRoomClient {
   private manualClose = false;
   private cleanups: Array<() => void> = [];
   private pendingDisplayName: string | null = null;
+  private roomPollId: ReturnType<typeof setInterval> | null = null;
+  private pollingRooms = false;
 
   start(): void {
     if (this.started) return;
@@ -74,6 +77,7 @@ class PlayRoomClient {
     this.cleanups.forEach((cleanup) => cleanup());
     this.cleanups = [];
     this.manualClose = true;
+    this.stopRoomPolling();
     this.socket.close();
     this.started = false;
   }
@@ -98,6 +102,7 @@ class PlayRoomClient {
     }
 
     this.applyServerResult(result);
+    this.startRoomPolling();
     saveServerUrl(url);
     if (name) saveDisplayName(name);
 
@@ -113,7 +118,7 @@ class PlayRoomClient {
     const token = loadReconnectToken();
     const serverUrl = loadServerUrl(DEFAULT_SERVER_URL);
 
-    if (!token) {
+    if (!token || !this.shouldAutoReconnect()) {
       uiStore.openRoomsModal('join');
       return;
     }
@@ -130,6 +135,7 @@ class PlayRoomClient {
       }
 
       this.applyServerResult(result);
+      this.startRoomPolling();
       await this.refreshRooms();
       if (await this.waitForCurrentRoom()) {
         uiStore.closeRoomsModal();
@@ -148,18 +154,22 @@ class PlayRoomClient {
 
   disconnect(): void {
     this.manualClose = true;
+    this.stopRoomPolling();
     this.socket.close();
     clearReconnectToken();
     sessionStore.clear();
     roomsStore.clear();
     currentRoomStore.clear();
+    seatReservationsStore.clear();
     connectionStore.setDisconnected();
     uiStore.openRoomsModal('join');
     eventLogStore.push('warning', 'Disconnected');
   }
 
-  async refreshRooms(): Promise<void> {
-    roomsStore.setLoading();
+  async refreshRooms(options: { silent?: boolean } = {}): Promise<void> {
+    if (!this.socket.isOpen) return;
+    if (!options.silent) roomsStore.setLoading();
+
     const result = await this.request(listRoomsRequest());
     this.applyServerResult(result);
     if (result.status === 'error') throw new PlayRoomRequestError(result);
@@ -186,6 +196,7 @@ class PlayRoomClient {
   async leaveRoom(): Promise<void> {
     await this.sendAndApply(leaveRoomRequest());
     currentRoomStore.clear();
+    seatReservationsStore.clear();
     await this.refreshRooms();
     uiStore.openRoomsModal('join');
   }
@@ -256,6 +267,31 @@ class PlayRoomClient {
     });
   }
 
+  private startRoomPolling(): void {
+    if (this.roomPollId) return;
+    this.roomPollId = setInterval(() => {
+      if (this.pollingRooms || !this.socket.isOpen) return;
+      this.pollingRooms = true;
+      void this.refreshRooms({ silent: true })
+        .catch(() => {})
+        .finally(() => {
+          this.pollingRooms = false;
+        });
+    }, 2500);
+  }
+
+  private stopRoomPolling(): void {
+    if (!this.roomPollId) return;
+    clearInterval(this.roomPollId);
+    this.roomPollId = null;
+    this.pollingRooms = false;
+  }
+
+  private shouldAutoReconnect(): boolean {
+    const [navigation] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    return navigation?.type === 'reload';
+  }
+
   private applyServerResult(result: ServerResult): void {
     switch (result.status) {
       case 'error':
@@ -280,6 +316,8 @@ class PlayRoomClient {
         break;
       case 'room_snapshot':
         currentRoomStore.setRoom(result.room);
+        roomsStore.upsertFromSnapshot(result.room);
+        seatReservationsStore.syncRoom(result.room);
         eventLogStore.push('protocol', `Snapshot: ${result.room.name}`, result);
         break;
       case 'pong':
@@ -297,10 +335,24 @@ class PlayRoomClient {
         break;
       case 'room_snapshot':
         currentRoomStore.setRoom(event.room);
+        roomsStore.upsertFromSnapshot(event.room);
+        seatReservationsStore.syncRoom(event.room);
         break;
       case 'room_event': {
         const state = get(currentRoomStore);
         eventLogStore.push('protocol', formatRoomEvent(event.event, state.room), event);
+
+        if (event.event.event === 'player_disconnected') {
+          seatReservationsStore.markDisconnected(event.event.player_id);
+        }
+
+        if (
+          event.event.event === 'player_left'
+          || event.event.event === 'player_reconnected'
+          || (event.event.event === 'role_changed' && event.event.role === 'spectator')
+        ) {
+          seatReservationsStore.clearPlayer(event.event.player_id);
+        }
 
         if (event.event.event === 'round_started' || event.event.event === 'match_reset') {
           currentRoomStore.clearRoundState();
@@ -320,8 +372,10 @@ class PlayRoomClient {
       return;
     }
 
+    this.stopRoomPolling();
     connectionStore.setDisconnected();
     currentRoomStore.clear();
+    seatReservationsStore.clear();
     roomsStore.clear();
     eventLogStore.push('warning', 'WebSocket closed');
     uiStore.openRoomsModal('join');

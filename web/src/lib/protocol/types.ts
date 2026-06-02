@@ -28,6 +28,8 @@ export interface PlayerView {
   ready: boolean;
   connected: boolean;
   score: number;
+  participant_seat_expires_at_ms?: number | null;
+  spectator_expires_at_ms?: number | null;
 }
 
 export interface PlayerScore {

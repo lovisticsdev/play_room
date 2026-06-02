@@ -65,13 +65,15 @@ The UI should separate identity from scoring:
 
 - Participants appear in the scoreboard and player panel.
 - Spectators appear in a separate spectator group.
-- Disconnected participants stay visible with a `Disconnected` badge because their score and reconnect session still matter.
+- Disconnected participants stay visible with a reserved-seat countdown based on `participant_seat_expires_at_ms` because their score and reconnect session still matter.
+- Expired seats move the disconnected identity into the spectator group and start a name-release countdown based on `spectator_expires_at_ms`.
+- Disconnected spectators disappear from the room after name expiry, which frees the display name for reuse.
 - Spectators should not be shown as score-zero competitors.
 
 Recommended naming policy:
 
 - room names are unique server-wide, case-insensitively
-- display names are unique within a room, including disconnected players
+- display names are unique within a room while a member is present or inside an expiry window
 - reconnecting with a token restores the original identity and bypasses display-name conflict checks because it is the same session
 
 ## Reconnect UX
@@ -88,4 +90,3 @@ Manual reconnect token entry should remain available in the modal/session area f
 4. Add local reconnect-token persistence and automatic reconnect.
 5. Add room-name/player-name conflict messaging with suggested alternatives.
 6. Polish game-state presentation: move locked, timeout, result, host transfer, disconnected player.
-
