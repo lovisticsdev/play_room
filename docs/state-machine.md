@@ -6,13 +6,13 @@ Rooms move through repeatable match phases:
 Lobby -> InRound -> Lobby -> ... -> Finished -> Lobby
 ```
 
-The default rules are Best of 3, represented internally as `target_score = 2` or first player to two round wins. Best of 5 can still be represented by setting `target_score = 3` when a room is created.
+The default rules are Best of 3, represented internally as `target_score = 2` or first player to two round wins. Supported competitive rooms are exactly two-player because the RPS/RPSLS resolver compares one participant against one opponent. Best of 5 can still be represented by setting `target_score = 3` when a room is created.
 
 ## Lobby
 
-Participants can join, leave, ready, unready, switch to spectator, or wait for another participant. A round starts when all connected participants are ready and the room has at least the configured minimum number of participants.
+Participants can join, leave, ready, unready, switch to spectator, or wait for another participant. A round starts when both connected participants are ready.
 
-Spectators can watch room state but do not submit moves and should not appear in the competitive scoreboard.
+Spectators can watch room state but do not submit moves or appear in the competitive scoreboard.
 
 ## InRound
 
@@ -41,7 +41,7 @@ After each round resolution, participants return to not-ready so the next round 
 
 Participants are competitive players and appear in the scoreboard. Disconnected participants remain visible because their score and reconnect session still matter. The server reserves a disconnected participant seat for 90 seconds; if the player does not reconnect in time, they become a disconnected spectator and the participant slot opens.
 
-Spectators are non-competitive viewers. They should be grouped separately from participants in the UI and excluded from score totals. Disconnected spectators reserve their room-scoped display name for 90 seconds; if they do not reconnect during that window, the server removes them from the room and frees the name.
+Spectators are non-competitive viewers. They are grouped separately from participants in the UI and excluded from score totals. Disconnected spectators reserve their room-scoped display name for 90 seconds; if they do not reconnect during that window, the server removes them from the room and frees the name.
 
 ## Host And Room Lifetime
 

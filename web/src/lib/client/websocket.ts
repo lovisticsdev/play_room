@@ -1,3 +1,4 @@
+import { decodeServerMessage, ProtocolDecodeError } from '../protocol/decode';
 import type { ClientEnvelope, ClientRequest, ServerEvent, ServerMessage, ServerResult } from '../protocol/types';
 
 type PendingRequest = {
@@ -42,11 +43,7 @@ export class PlayRoomSocket {
 
       socket.addEventListener('message', (event) => this.handleMessage(event.data));
       socket.addEventListener('close', (event) => {
-        this.pending.forEach(({ reject: rejectPending, timeoutId }) => {
-          clearTimeout(timeoutId);
-          rejectPending(new Error('WebSocket closed'));
-        });
-        this.pending.clear();
+        this.rejectPending(new Error('WebSocket closed'));
         this.closeListeners.forEach((listener) => listener(event));
       });
     });
@@ -102,8 +99,14 @@ export class PlayRoomSocket {
     let message: ServerMessage;
 
     try {
-      message = JSON.parse(String(raw)) as ServerMessage;
-    } catch {
+      message = decodeServerMessage(raw);
+    } catch (error) {
+      const decodeError = error instanceof ProtocolDecodeError
+        ? error
+        : new ProtocolDecodeError('Server message could not be decoded.');
+      this.rejectPending(decodeError);
+      this.emitError(decodeError);
+      this.socket?.close(1002, 'invalid server message');
       return;
     }
 
@@ -120,5 +123,20 @@ export class PlayRoomSocket {
     }
 
     this.eventListeners.forEach((listener) => listener(message.event));
+  }
+
+  private rejectPending(error: Error): void {
+    this.pending.forEach(({ reject, timeoutId }) => {
+      clearTimeout(timeoutId);
+      reject(error);
+    });
+    this.pending.clear();
+  }
+
+  private emitError(error: Error): void {
+    const event = typeof ErrorEvent === 'function'
+      ? new ErrorEvent('error', { error, message: error.message })
+      : new Event('error');
+    this.errorListeners.forEach((listener) => listener(event));
   }
 }

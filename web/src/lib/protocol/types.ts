@@ -112,6 +112,9 @@ export interface WelcomeState {
   player_id: PlayerId;
   reconnect_token: SessionToken;
   protocol_version: number;
+  reconnected: boolean;
+  stale_token_replaced: boolean;
+  room_restored: boolean;
 }
 
 export type ErrorCode =
@@ -128,7 +131,15 @@ export type ErrorCode =
 export type ServerResult =
   | { status: 'ok' }
   | { status: 'error'; message: string; code?: ErrorCode | null; suggestions?: string[] }
-  | { status: 'welcome'; player_id: PlayerId; reconnect_token: SessionToken; protocol_version: number }
+  | {
+      status: 'welcome';
+      player_id: PlayerId;
+      reconnect_token: SessionToken;
+      protocol_version: number;
+      reconnected: boolean;
+      stale_token_replaced: boolean;
+      room_restored: boolean;
+    }
   | { status: 'room_list'; rooms: RoomSummary[] }
   | { status: 'room_snapshot'; room: RoomSnapshot }
   | { status: 'pong' };

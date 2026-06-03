@@ -32,6 +32,8 @@ import {
 } from '../storage/reconnect-token';
 import { formatRoomEvent } from '../view/event-format';
 
+type WelcomeResult = Extract<ServerResult, { status: 'welcome' }>;
+
 export class PlayRoomRequestError extends Error {
   readonly code: ErrorCode | null;
   readonly suggestions: string[];
@@ -48,14 +50,30 @@ export function isPlayRoomRequestError(error: unknown): error is PlayRoomRequest
   return error instanceof PlayRoomRequestError;
 }
 
+const RECONNECT_DELAYS_MS = [0, 500, 1000, 2000, 4000, 8000] as const;
+const RECONNECT_ROOM_SNAPSHOT_WAIT_MS = 750;
+
+type ReconnectTrigger = 'startup' | 'transient';
+
+type RoomSnapshotWaiter = {
+  afterVersion: number;
+  resolve: (restored: boolean) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+
 class PlayRoomClient {
   private socket = new PlayRoomSocket();
   private started = false;
   private manualClose = false;
+  private reconnecting = false;
+  private reconnectAttempt = 0;
+  private reconnectTimerId: ReturnType<typeof setTimeout> | null = null;
   private cleanups: Array<() => void> = [];
   private pendingDisplayName: string | null = null;
   private roomPollId: ReturnType<typeof setInterval> | null = null;
   private pollingRooms = false;
+  private roomSnapshotVersion = 0;
+  private roomSnapshotWaiters: RoomSnapshotWaiter[] = [];
 
   start(): void {
     if (this.started) return;
@@ -63,11 +81,8 @@ class PlayRoomClient {
 
     this.cleanups = [
       this.socket.onEvent((event) => this.applyServerEvent(event)),
-      this.socket.onClose(() => this.handleClose()),
-      this.socket.onError(() => {
-        const connection = get(connectionStore);
-        connectionStore.setError(connection.serverUrl, 'WebSocket error');
-      }),
+      this.socket.onClose((event) => this.handleClose(event)),
+      this.socket.onError((event) => this.handleSocketError(event)),
     ];
 
     void this.autoReconnect();
@@ -76,6 +91,7 @@ class PlayRoomClient {
   stop(): void {
     this.cleanups.forEach((cleanup) => cleanup());
     this.cleanups = [];
+    this.cancelReconnect();
     this.manualClose = true;
     this.stopRoomPolling();
     this.socket.close();
@@ -83,6 +99,7 @@ class PlayRoomClient {
   }
 
   async connect(serverUrl: string, displayName: string, reconnectToken: string | null = null): Promise<void> {
+    this.cancelReconnect();
     const url = serverUrl.trim() || DEFAULT_SERVER_URL;
     const name = displayName.trim();
     const usingReconnect = Boolean(reconnectToken?.trim());
@@ -95,6 +112,7 @@ class PlayRoomClient {
     connectionStore.setConnecting(url);
 
     await this.openSocket(url);
+    const snapshotVersion = this.roomSnapshotVersion;
     const result = await this.request(connectRequest(name, reconnectToken));
 
     if (result.status !== 'welcome') {
@@ -107,8 +125,14 @@ class PlayRoomClient {
     if (name) saveDisplayName(name);
 
     await this.refreshRooms();
-    if (usingReconnect && (await this.waitForCurrentRoom())) {
-      uiStore.closeRoomsModal();
+    if (usingReconnect) {
+      if (await this.restoreRoomAfterWelcome(result, snapshotVersion)) {
+        uiStore.closeRoomsModal();
+      } else {
+        this.clearRoomPresence();
+        uiStore.openRoomsModal('join');
+        this.announceUnrestoredReconnect(result);
+      }
     } else {
       uiStore.openRoomsModal('join');
     }
@@ -116,51 +140,24 @@ class PlayRoomClient {
 
   async autoReconnect(): Promise<void> {
     const token = loadReconnectToken();
-    const serverUrl = loadServerUrl(DEFAULT_SERVER_URL);
 
     if (!token || !this.shouldAutoReconnect()) {
       uiStore.openRoomsModal('join');
       return;
     }
 
-    this.pendingDisplayName = loadDisplayName() || 'reconnected player';
-    connectionStore.setReconnecting(serverUrl);
-
-    try {
-      await this.openSocket(serverUrl);
-      const result = await this.request(reconnectRequest(token));
-
-      if (result.status !== 'welcome') {
-        throw result.status === 'error' ? new PlayRoomRequestError(result) : new Error('Reconnect failed.');
-      }
-
-      this.applyServerResult(result);
-      this.startRoomPolling();
-      await this.refreshRooms();
-      if (await this.waitForCurrentRoom()) {
-        uiStore.closeRoomsModal();
-      } else {
-        uiStore.openRoomsModal('join');
-      }
-      eventLogStore.push('success', 'Reconnected with stored token');
-    } catch (error) {
-      clearReconnectToken();
-      sessionStore.clear();
-      currentRoomStore.clear();
-      connectionStore.setError(serverUrl, error instanceof Error ? error.message : 'Reconnect failed');
-      uiStore.openRoomsModal('join');
-    }
+    this.beginStoredReconnect('startup');
   }
 
   disconnect(): void {
+    this.cancelReconnect();
     this.manualClose = true;
     this.stopRoomPolling();
     this.socket.close();
     clearReconnectToken();
     sessionStore.clear();
     roomsStore.clear();
-    currentRoomStore.clear();
-    seatReservationsStore.clear();
+    this.clearRoomPresence();
     connectionStore.setDisconnected();
     uiStore.openRoomsModal('join');
     eventLogStore.push('warning', 'Disconnected');
@@ -195,8 +192,7 @@ class PlayRoomClient {
 
   async leaveRoom(): Promise<void> {
     await this.sendAndApply(leaveRoomRequest());
-    currentRoomStore.clear();
-    seatReservationsStore.clear();
+    this.clearRoomPresence();
     await this.refreshRooms();
     uiStore.openRoomsModal('join');
   }
@@ -218,11 +214,16 @@ class PlayRoomClient {
     if (result.status === 'ok') currentRoomStore.setLocalMove(move);
   }
 
-  private async openSocket(serverUrl: string): Promise<void> {
+  private async openSocket(
+    serverUrl: string,
+    options: { announce?: boolean; markConnected?: boolean } = {},
+  ): Promise<void> {
+    const announce = options.announce ?? true;
+    const markConnected = options.markConnected ?? true;
     this.manualClose = false;
     await this.socket.connect(serverUrl);
-    connectionStore.setConnected(serverUrl);
-    eventLogStore.push('success', `WebSocket open: ${serverUrl}`);
+    if (markConnected) connectionStore.setConnected(serverUrl);
+    if (announce) eventLogStore.push('success', `WebSocket open: ${serverUrl}`);
   }
 
   private async sendAndApply(request: ClientRequest): Promise<ServerResult> {
@@ -245,26 +246,180 @@ class PlayRoomClient {
     }
   }
 
-  private waitForCurrentRoom(timeoutMs = 500): Promise<boolean> {
-    if (get(currentRoomStore).room) return Promise.resolve(true);
+  private beginStoredReconnect(trigger: ReconnectTrigger): void {
+    if (this.reconnecting) return;
+
+    const token = loadReconnectToken();
+    const serverUrl = this.reconnectServerUrl();
+    if (!token) {
+      this.finishReconnectFailure(serverUrl, 'Connection lost. Reconnect token is missing.', true);
+      return;
+    }
+
+    this.reconnecting = true;
+    this.reconnectAttempt = 0;
+    this.stopRoomPolling();
+    connectionStore.setReconnecting(serverUrl);
+    this.pendingDisplayName = get(sessionStore).displayName || loadDisplayName() || 'reconnected player';
+
+    if (trigger === 'transient') {
+      if (get(currentRoomStore).room) uiStore.closeRoomsModal();
+      eventLogStore.push('warning', 'Connection lost; attempting reconnect');
+    }
+
+    this.scheduleReconnectAttempt(RECONNECT_DELAYS_MS[0]);
+  }
+
+  private scheduleReconnectAttempt(delayMs: number): void {
+    this.clearReconnectTimer();
+    this.reconnectTimerId = setTimeout(() => {
+      this.reconnectTimerId = null;
+      void this.runReconnectAttempt();
+    }, delayMs);
+  }
+
+  private async runReconnectAttempt(): Promise<void> {
+    if (!this.reconnecting) return;
+
+    const token = loadReconnectToken();
+    const serverUrl = this.reconnectServerUrl();
+    if (!token) {
+      this.finishReconnectFailure(serverUrl, 'Reconnect token is missing.', true);
+      return;
+    }
+
+    const attempt = this.reconnectAttempt + 1;
+    this.reconnectAttempt = attempt;
+    const snapshotVersion = this.roomSnapshotVersion;
+
+    try {
+      await this.openSocket(serverUrl, { announce: false, markConnected: false });
+      const result = await this.request(reconnectRequest(token));
+
+      if (result.status !== 'welcome') {
+        throw result.status === 'error' ? new PlayRoomRequestError(result) : new Error('Reconnect failed.');
+      }
+
+      this.applyServerResult(result);
+      connectionStore.setConnected(serverUrl);
+      this.reconnecting = false;
+      this.reconnectAttempt = 0;
+      this.startRoomPolling();
+      await this.refreshRooms({ silent: true });
+
+      if (await this.restoreRoomAfterWelcome(result, snapshotVersion)) {
+        uiStore.closeRoomsModal();
+        eventLogStore.push('success', 'Reconnected with stored token');
+      } else {
+        this.clearRoomPresence();
+        uiStore.openRoomsModal('join');
+        this.announceUnrestoredReconnect(result);
+      }
+    } catch (error) {
+      if (!this.reconnecting) return;
+      this.manualClose = true;
+      this.socket.close();
+
+      if (error instanceof PlayRoomRequestError) {
+        this.finishReconnectFailure(serverUrl, error.message, true);
+        return;
+      }
+
+      if (this.reconnectAttempt >= RECONNECT_DELAYS_MS.length) {
+        const message = error instanceof Error ? error.message : 'Reconnect failed';
+        this.finishReconnectFailure(serverUrl, message, false);
+        return;
+      }
+
+      const nextDelay = RECONNECT_DELAYS_MS[this.reconnectAttempt];
+      eventLogStore.push('warning', `Reconnect attempt ${attempt} failed; retrying`);
+      this.scheduleReconnectAttempt(nextDelay);
+    }
+  }
+
+  private cancelReconnect(): void {
+    this.reconnecting = false;
+    this.reconnectAttempt = 0;
+    this.clearReconnectTimer();
+  }
+
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimerId) return;
+    clearTimeout(this.reconnectTimerId);
+    this.reconnectTimerId = null;
+  }
+
+  private finishReconnectFailure(serverUrl: string, message: string, clearToken: boolean): void {
+    this.cancelReconnect();
+    this.stopRoomPolling();
+    this.manualClose = true;
+    this.socket.close();
+    if (clearToken) {
+      clearReconnectToken();
+      sessionStore.clear();
+    }
+    roomsStore.clear();
+    this.clearRoomPresence();
+    connectionStore.setError(serverUrl, message);
+    uiStore.openRoomsModal('join');
+    eventLogStore.push('error', message);
+  }
+
+  private reconnectServerUrl(): string {
+    return loadServerUrl(get(connectionStore).serverUrl || DEFAULT_SERVER_URL);
+  }
+
+  private async restoreRoomAfterWelcome(result: WelcomeResult, snapshotVersion: number): Promise<boolean> {
+    if (!result.room_restored) return false;
+    return this.waitForRoomSnapshotAfter(snapshotVersion);
+  }
+
+  private announceUnrestoredReconnect(result: WelcomeResult): void {
+    if (result.stale_token_replaced) {
+      eventLogStore.push('warning', 'Connected with a fresh session; previous room was not restored');
+      return;
+    }
+
+    if (result.reconnected) {
+      eventLogStore.push('warning', 'Reconnected identity, but no room was restored');
+      return;
+    }
+
+    eventLogStore.push('info', 'Connected; no previous room was restored');
+  }
+
+  private waitForRoomSnapshotAfter(
+    afterVersion: number,
+    timeoutMs = RECONNECT_ROOM_SNAPSHOT_WAIT_MS,
+  ): Promise<boolean> {
+    if (this.roomSnapshotVersion > afterVersion && get(currentRoomStore).room) {
+      return Promise.resolve(true);
+    }
 
     return new Promise((resolve) => {
-      let settled = false;
-      let unsubscribe: (() => void) | null = null;
-      const timeoutId = setTimeout(() => finish(false), timeoutMs);
+      const timeoutId = setTimeout(() => {
+        this.roomSnapshotWaiters = this.roomSnapshotWaiters.filter((waiter) => waiter.resolve !== resolve);
+        resolve(false);
+      }, timeoutMs);
 
-      const finish = (restored: boolean) => {
-        if (settled) return;
-        settled = true;
-        if (unsubscribe) unsubscribe();
-        clearTimeout(timeoutId);
-        resolve(restored);
-      };
-
-      unsubscribe = currentRoomStore.subscribe((state) => {
-        if (state.room) finish(true);
-      });
+      this.roomSnapshotWaiters.push({ afterVersion, resolve, timeoutId });
     });
+  }
+
+  private noteRoomSnapshot(): void {
+    this.roomSnapshotVersion += 1;
+    const ready = this.roomSnapshotWaiters.filter((waiter) => this.roomSnapshotVersion > waiter.afterVersion);
+    this.roomSnapshotWaiters = this.roomSnapshotWaiters.filter((waiter) => this.roomSnapshotVersion <= waiter.afterVersion);
+
+    for (const waiter of ready) {
+      clearTimeout(waiter.timeoutId);
+      waiter.resolve(Boolean(get(currentRoomStore).room));
+    }
+  }
+
+  private clearRoomPresence(): void {
+    currentRoomStore.clear();
+    seatReservationsStore.clear();
   }
 
   private startRoomPolling(): void {
@@ -318,6 +473,7 @@ class PlayRoomClient {
         currentRoomStore.setRoom(result.room);
         roomsStore.upsertFromSnapshot(result.room);
         seatReservationsStore.syncRoom(result.room);
+        this.noteRoomSnapshot();
         eventLogStore.push('protocol', `Snapshot: ${result.room.name}`, result);
         break;
       case 'pong':
@@ -337,6 +493,7 @@ class PlayRoomClient {
         currentRoomStore.setRoom(event.room);
         roomsStore.upsertFromSnapshot(event.room);
         seatReservationsStore.syncRoom(event.room);
+        this.noteRoomSnapshot();
         break;
       case 'room_event': {
         const state = get(currentRoomStore);
@@ -366,19 +523,33 @@ class PlayRoomClient {
     }
   }
 
-  private handleClose(): void {
+  private handleSocketError(event: Event): void {
+    const message = event instanceof ErrorEvent && event.message ? event.message : 'WebSocket error';
+    if (this.reconnecting) {
+      eventLogStore.push('warning', message);
+      return;
+    }
+
+    const connection = get(connectionStore);
+    connectionStore.setError(connection.serverUrl, message);
+    eventLogStore.push('error', message);
+  }
+
+  private handleClose(event: CloseEvent): void {
     if (this.manualClose) {
       this.manualClose = false;
       return;
     }
 
     this.stopRoomPolling();
-    connectionStore.setDisconnected();
-    currentRoomStore.clear();
-    seatReservationsStore.clear();
-    roomsStore.clear();
-    eventLogStore.push('warning', 'WebSocket closed');
-    uiStore.openRoomsModal('join');
+    if (this.reconnecting) return;
+
+    if (event.code === 1002) {
+      this.finishReconnectFailure(this.reconnectServerUrl(), 'Protocol error: invalid server message.', false);
+      return;
+    }
+
+    this.beginStoredReconnect('transient');
   }
 }
 

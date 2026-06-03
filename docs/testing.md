@@ -6,6 +6,7 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 
 - RPS/RPSLS move comparison is deterministic.
 - Default rooms are Best of 3 (`target_score = 2`).
+- Supported RPS/RPSLS rooms validate as exactly two-player because the resolver compares one participant against one opponent.
 - A room creator is joined atomically as host.
 - Spectators cannot submit moves.
 - Spectators are excluded from the competitive scoreboard.
@@ -20,13 +21,15 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 
 ## Server And Protocol Invariants
 
-- Protocol messages round-trip through JSON.
+- Protocol messages round-trip through JSON, including welcome reconnect metadata.
+- Browser WebSocket messages are runtime-validated before being applied to client state.
 - Room names are unique server-wide, case-insensitively.
 - Joining by room name is predictable and case-insensitive when names are unique.
 - Duplicate room-name errors include suggested alternatives.
 - Duplicate disconnected display-name errors are explicit enough for reconnect guidance.
 - Moving between rooms preserves old-room leave events and snapshots.
-- Reconnect restores the same player identity when the token is valid.
+- Reconnect restores the same player identity when the token is valid and reports whether room membership was restored.
+- Unknown reconnect tokens create a fresh identity, fresh token, explicit stale-token metadata, and explanatory notice.
 - Reconnect before participant-seat expiry preserves the active seat; reconnect after participant-seat expiry but before spectator-name expiry restores the identity as a spectator.
 - Expired spectator cleanup removes room membership and frees the display name.
 - Host transfer and empty-room cleanup remain consistent after leave events.
@@ -50,7 +53,7 @@ Current high-value flows:
 - timeout flow
 - scripted JSON scenarios
 
-Planned web-facing coverage should add browser-store/unit checks for automatic reconnect, room-modal state, duplicate-name messaging, next-match controls, and scoreboard grouping.
+The committed web checks are `svelte-check` and a Vite production build. Browser automation and store-level unit tests are not part of the current suite.
 
 ## Manual Checks
 

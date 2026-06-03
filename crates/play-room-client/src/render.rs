@@ -25,9 +25,22 @@ fn render_response(request_id: u64, result: &ServerResult) {
             player_id,
             reconnect_token,
             protocol_version,
+            reconnected,
+            stale_token_replaced,
+            room_restored,
         } => {
             println!("connected as {player_id} using protocol v{protocol_version}");
             println!("reconnect token: {reconnect_token}");
+            if *stale_token_replaced {
+                println!("reconnect status: stale token replaced with a fresh session");
+            } else if *reconnected {
+                let room_status = if *room_restored {
+                    "room restored"
+                } else {
+                    "no room restored"
+                };
+                println!("reconnect status: identity restored, {room_status}");
+            }
         }
         ServerResult::RoomList { rooms } => {
             if rooms.is_empty() {

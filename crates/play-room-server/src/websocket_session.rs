@@ -59,11 +59,7 @@ pub async fn handle_websocket_connection(
     let connected = {
         let mut locked = manager.lock().await;
         let connected = locked.connect(name, reconnect_token, tx.clone());
-        locked.welcome(
-            &connected.player_id,
-            first.request_id,
-            connected.reconnect_token.clone(),
-        );
+        locked.welcome(&connected, first.request_id);
         locked.flush_messages(connected.messages.clone());
         connected
     };

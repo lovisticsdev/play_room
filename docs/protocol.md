@@ -32,12 +32,17 @@ Each client request carries a numeric `request_id`. Responses echo that ID so cl
     "status": "welcome",
     "player_id": "player-...",
     "reconnect_token": "session-...",
-    "protocol_version": 1
+    "protocol_version": 2,
+    "reconnected": false,
+    "stale_token_replaced": false,
+    "room_restored": false
   }
 }
 ```
 
-The `player_id` is the stable identity for the connected session. The `reconnect_token` is a private recovery credential. The browser should store it in tab-scoped session storage and attempt automatic reconnect after refresh or network loss in that tab.
+The `player_id` is the stable identity for the connected session. The `reconnect_token` is a private recovery credential. The browser stores it in tab-scoped session storage and attempts automatic reconnect after refresh or network loss in that tab.
+
+Welcome metadata makes reconnect outcomes explicit. `reconnected` means the supplied token matched an existing player identity. `stale_token_replaced` means a supplied token was unknown and the server issued a fresh identity/token. `room_restored` means the restored identity still has room membership and the server will send an authoritative room snapshot for it.
 
 ## Room And Match Requests
 
@@ -59,24 +64,24 @@ start_next_match
 
 ## Reconnect Behavior
 
-A reconnect request with a valid token should restore the same player identity instead of creating a new player. If that player is still in a room, the client receives the current room snapshot and renders the existing room state.
+A reconnect request with a valid token restores the same player identity instead of creating a new player. The welcome response reports this with `reconnected: true`. If that player is still in a room, the response also reports `room_restored: true`, and the client receives the current room snapshot before rendering the restored room state.
 
 Disconnected participants keep their participant seat for 90 seconds. Reconnecting during that window restores the player as an active participant. After the grace window, the server demotes the player to a disconnected spectator and frees the participant slot. The disconnected spectator then keeps the room-scoped display name for another 90 seconds; reconnecting during that window restores the same identity as a spectator. If that second window expires, the server removes the disconnected spectator from the room and the display name becomes available again.
 
-Reconnect can fail when the token is unknown, the server restarted without session persistence, or the room/session no longer exists. The UI should then fall back to the connect and room browser flow.
+If the token is unknown, for example after a server restart without session persistence, the server treats it as stale: it creates a fresh player identity, returns a fresh reconnect token, sets `stale_token_replaced: true`, emits a notice, and does not restore room membership. During transient socket loss, the browser keeps the current room state visible, marks the connection as reconnecting, retries with a short backoff schedule, and only falls back to the connect/room browser flow after recovery fails or the welcome response confirms no room was restored.
 
 ## Room Updates
 
 Room updates are broadcast as events and snapshots:
 
 - events explain what just happened, such as joined, left, ready, move accepted, host changed, round resolved, game ended, or match reset. Move-accepted events intentionally identify the player but not the selected move; submitted moves are revealed only in the round result.
-- snapshots are authoritative and should repair any stale local client state
+- snapshots are authoritative and repair stale local client state
 
-Clients should use events for the live feed and snapshots for rendered truth.
+Clients use events for the live feed and snapshots for rendered truth. Browser clients validate every incoming WebSocket frame against the protocol shape before applying it; malformed messages are treated as protocol errors instead of being trusted after JSON.parse.
 
 Room summaries include player counts, spectator counts, game kind, and `target_score`, so clients can render labels such as Best of 3 or Best of 5.
 
-Snapshot player views may include `participant_seat_expires_at_ms` for disconnected participants whose competitive seat is temporarily reserved, or `spectator_expires_at_ms` for disconnected spectators whose room-scoped display name is temporarily reserved. Browser clients should render countdowns from these server deadlines instead of estimating them locally.
+Snapshot player views may include `participant_seat_expires_at_ms` for disconnected participants whose competitive seat is temporarily reserved, or `spectator_expires_at_ms` for disconnected spectators whose room-scoped display name is temporarily reserved. Browser clients render countdowns from these server deadlines instead of estimating them locally.
 
 ## Error Shape
 
@@ -95,7 +100,7 @@ Errors include a human message, optional machine-readable code, and optional sug
 }
 ```
 
-The web client should branch on `code` and present `suggestions` as clickable alternatives when present.
+The web client branches on `code` and presents `suggestions` as clickable alternatives when present.
 
 ## Naming Rules
 

@@ -30,6 +30,9 @@ pub enum ServerResult {
         player_id: PlayerId,
         reconnect_token: SessionToken,
         protocol_version: u16,
+        reconnected: bool,
+        stale_token_replaced: bool,
+        room_restored: bool,
     },
     RoomList {
         rooms: Vec<RoomSummary>,

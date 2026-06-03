@@ -1,12 +1,18 @@
 mod broadcast;
 mod config;
 mod errors;
+mod expiry;
+mod fanout;
 mod identity;
+mod membership;
+mod room_lifecycle;
 mod room_manager;
+mod room_registry;
 mod router;
 mod scheduler;
 mod server;
 mod session;
+mod session_registry;
 mod websocket_session;
 
 use clap::Parser;

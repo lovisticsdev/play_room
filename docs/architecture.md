@@ -25,9 +25,26 @@ client request
 
 The central rule is that socket handlers never mutate room internals directly. They convert client requests into core commands and apply those commands through the room state machine. The core returns events; the server broadcasts those events and snapshots.
 
+## Server Module Boundaries
+
+The server keeps room lifecycle state in `room_manager`, but low-level concerns are split out:
+
+- `fanout` builds outbound room event/snapshot batches and sends messages to connected sessions.
+- `expiry` owns participant-seat and spectator-name expiry types plus pure expiry/snapshot annotation helpers.
+- `room_registry` owns room storage, room ID/name lookup, case-insensitive room-name checks, suggested alternatives for duplicate names, summaries, and empty-room cleanup checks.
+- `session_registry` owns active outbound sockets, display names, reconnect tokens, and token-to-player lookup.
+- `membership` owns the player-to-current-room mapping used by lifecycle operations.
+- `room_lifecycle` owns stateless helpers for room construction, role-specific player construction, and round-timer extraction.
+- `scheduler` owns Tokio timers for rounds, seat expiry, and spectator cleanup.
+- `router`, `session`, and `websocket_session` translate transport messages into room-manager calls.
+
+This keeps `RoomManager` focused on orchestration: it coordinates registries, applies core room commands, schedules timers, and flushes outbound messages.
+
 ## Session Ownership
 
 The server owns player sessions and reconnect tokens. A reconnect token restores the same player identity, which allows the user to return to the same room, score, role, and connected state when the server still has that session.
+
+Welcome responses expose reconnect outcome metadata. The server reports whether a token restored an existing identity, whether an unknown token was replaced with a fresh session, and whether room membership was restored. If a reconnect token is unknown, the server starts a fresh session with a fresh token and emits a notice instead of silently storing an empty or stale identity.
 
 Room membership is tied to player identity, not the transport connection. A disconnected participant keeps their participant seat for 90 seconds so they can recover from a refresh or network drop without losing score or role. If they do not reconnect during that grace window, the server demotes them to a disconnected spectator, freeing the participant slot. Disconnected spectators then keep the room-scoped display name for another 90 seconds; if they still do not reconnect, the server removes them from the room and frees the name. The reconnect token remains valid for the player identity, but after room membership cleanup it no longer restores that room automatically.
 
@@ -41,8 +58,6 @@ When a host leaves, the room promotes another remaining player, preferring conne
 
 Rooms default to Best of 3. A finished room keeps its final scoreboard and winner in the authoritative snapshot until the host starts the next match. Starting the next match resets scores, ready state, moves, and round number without changing current seats or spectators.
 
-## Browser Direction
+## Browser Client
 
-The browser client should now be treated as the main experience. Connection and room browsing should move into a modal/drawer, while the main screen focuses on the active room, game board, scoreboard, player/spectator lists, and transient match notifications.
-
-See [web-ui-plan.md](web-ui-plan.md) for the planned UI structure.
+The browser client is the primary product surface. Connection, reconnect, room browsing, creation, joining, and spectating live in the Rooms modal. Active room state is rendered through the match surface, participants/spectators rail, scoreboard, and transient notifications.
