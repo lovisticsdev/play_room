@@ -1,7 +1,8 @@
-use crate::broadcast::{send, OutboundTx};
+use crate::broadcast::{send, OutboundTx, SendFailure};
 use play_room_core::{PlayerId, RoomEvent, RoomId, RoomSnapshot};
 use play_room_protocol::{ServerEvent, ServerMessage};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use tracing::warn;
 
 pub type OutboundMessage = (PlayerId, ServerMessage);
 pub type OutboundMessages = Vec<OutboundMessage>;
@@ -10,16 +11,26 @@ pub fn send_to(
     sessions: &BTreeMap<PlayerId, OutboundTx>,
     player_id: &PlayerId,
     message: ServerMessage,
-) {
+) -> Result<(), SendFailure> {
     if let Some(tx) = sessions.get(player_id) {
-        send(tx, message);
+        send(tx, message)
+    } else {
+        Ok(())
     }
 }
 
-pub fn flush_messages(sessions: &BTreeMap<PlayerId, OutboundTx>, messages: OutboundMessages) {
+pub fn flush_messages(
+    sessions: &BTreeMap<PlayerId, OutboundTx>,
+    messages: OutboundMessages,
+) -> Vec<PlayerId> {
+    let mut failed = BTreeSet::new();
     for (player_id, message) in messages {
-        send_to(sessions, &player_id, message);
+        if let Err(reason) = send_to(sessions, &player_id, message) {
+            warn!(%player_id, ?reason, "dropping client after outbound queue failure");
+            failed.insert(player_id);
+        }
     }
+    failed.into_iter().collect()
 }
 
 pub fn room_messages(

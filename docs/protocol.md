@@ -7,6 +7,23 @@ Play Room uses the same JSON request, response, event, and snapshot shapes acros
 
 The server listens on one host/port and upgrades HTTP WebSocket handshakes while preserving the raw TCP path for the terminal client.
 
+## Protocol Metadata
+
+Rust protocol and core DTOs are the source for protocol tag values and JSON Schema. The `play-room-protocol` crate serializes representative serde values into a tag manifest, generates JSON Schema for client/server envelopes, and writes `web/src/lib/protocol/generated.ts` plus `web/src/lib/protocol/schema.ts`.
+
+Regenerate the browser protocol files with either command:
+
+```bash
+cargo run -p play-room-protocol --bin generate-web-protocol
+```
+
+```bash
+cd web
+npm run generate:protocol
+```
+
+`cargo test --workspace` includes drift tests that compare the checked-in generated constants and schema with Rust-generated output. The web client imports generated constants for enum unions and uses AJV with the generated server-message schema for runtime WebSocket validation. A small semantic guard still enforces domain constraints that JSON Schema does not express, such as currently supported two-player rules.
+
 ## Client Request
 
 ```json
@@ -77,7 +94,7 @@ Room updates are broadcast as events and snapshots:
 - events explain what just happened, such as joined, left, ready, move accepted, host changed, round resolved, game ended, or match reset. Move-accepted events intentionally identify the player but not the selected move; submitted moves are revealed only in the round result.
 - snapshots are authoritative and repair stale local client state
 
-Clients use events for the live feed and snapshots for rendered truth. Browser clients validate every incoming WebSocket frame against the protocol shape before applying it; malformed messages are treated as protocol errors instead of being trusted after JSON.parse.
+Clients use events for the live feed and snapshots for rendered truth. Browser clients validate every incoming WebSocket frame against the generated server-message JSON Schema before applying it; malformed messages are treated as protocol errors instead of being trusted after JSON.parse.
 
 Room summaries include player counts, spectator counts, game kind, and `target_score`, so clients can render labels such as Best of 3 or Best of 5.
 
@@ -100,7 +117,7 @@ Errors include a human message, optional machine-readable code, and optional sug
 }
 ```
 
-The web client branches on `code` and presents `suggestions` as clickable alternatives when present.
+The web client branches on `code` and presents `suggestions` as clickable alternatives when present. Quota failures use `room_limit_reached` for room-cap errors and `client_limit_reached` for retained-session-cap errors.
 
 ## Naming Rules
 

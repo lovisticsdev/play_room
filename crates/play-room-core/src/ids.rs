@@ -1,9 +1,12 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 macro_rules! id_type {
     ($name:ident) => {
-        #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+        #[derive(
+            Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, JsonSchema,
+        )]
         #[serde(transparent)]
         pub struct $name(pub String);
 

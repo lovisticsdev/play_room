@@ -11,7 +11,11 @@ use play_room_core::{
     RoomSummary, SessionToken,
 };
 use play_room_protocol::{ErrorCode, ServerEvent, ServerMessage, ServerResult, PROTOCOL_VERSION};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+const DEFAULT_MAX_ROOMS: usize = 128;
+const DEFAULT_MAX_CLIENTS: usize = 512;
+const DEFAULT_ABANDONED_SESSION_TTL_MS: u64 = 30 * 60 * 1_000;
 
 #[derive(Default)]
 pub struct RoomManager {
@@ -20,6 +24,24 @@ pub struct RoomManager {
     room_memberships: RoomMemberships,
     seat_expirations: BTreeMap<PlayerId, SeatExpiry>,
     spectator_expirations: BTreeMap<PlayerId, SpectatorExpiry>,
+    limits: RoomManagerLimits,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoomManagerLimits {
+    pub max_rooms: usize,
+    pub max_clients: usize,
+    pub abandoned_session_ttl_ms: u64,
+}
+
+impl Default for RoomManagerLimits {
+    fn default() -> Self {
+        Self {
+            max_rooms: DEFAULT_MAX_ROOMS,
+            max_clients: DEFAULT_MAX_CLIENTS,
+            abandoned_session_ttl_ms: DEFAULT_ABANDONED_SESSION_TTL_MS,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +96,20 @@ impl RoomManagerError {
 
     fn not_in_room() -> Self {
         Self::coded("player is not in a room", ErrorCode::NotInRoom)
+    }
+
+    fn room_limit_reached(max_rooms: usize) -> Self {
+        Self::coded(
+            format!("room limit reached; max_rooms={max_rooms}"),
+            ErrorCode::RoomLimitReached,
+        )
+    }
+
+    fn client_limit_reached(max_clients: usize) -> Self {
+        Self::coded(
+            format!("client limit reached; max_clients={max_clients}"),
+            ErrorCode::ClientLimitReached,
+        )
     }
 
     fn duplicate_player_name(name: impl Into<String>, connected: Option<bool>) -> Self {
@@ -153,12 +189,41 @@ impl RoomManagerError {
 type AppliedRoomCommand = (RoomId, Vec<RoomEvent>, Option<RoundTimer>);
 
 impl RoomManager {
+    pub fn new(limits: RoomManagerLimits) -> Self {
+        Self {
+            limits,
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
     pub fn connect(
         &mut self,
         name: String,
         token: Option<SessionToken>,
         tx: OutboundTx,
     ) -> ConnectedPlayer {
+        self.try_connect_at(name, token, tx, 0)
+            .expect("default room manager limits should accept this connection")
+    }
+
+    pub fn try_connect_at(
+        &mut self,
+        name: String,
+        token: Option<SessionToken>,
+        tx: OutboundTx,
+        now_ms: u64,
+    ) -> Result<ConnectedPlayer, RoomManagerError> {
+        self.cleanup_abandoned_sessions(now_ms);
+        if !self
+            .session_registry
+            .can_accept_connection(token.as_ref(), self.limits.max_clients)
+        {
+            return Err(RoomManagerError::client_limit_reached(
+                self.limits.max_clients,
+            ));
+        }
+
         let registered = self.session_registry.connect(name, token, tx);
         let player_id = registered.player_id.clone();
         let reconnect_token = registered.reconnect_token.clone();
@@ -205,17 +270,17 @@ impl RoomManager {
             (Vec::new(), false)
         };
 
-        ConnectedPlayer {
+        Ok(ConnectedPlayer {
             player_id,
             reconnect_token,
             messages,
             reconnected: registered.reconnected,
             stale_token_replaced: registered.reconnect_token_replaced,
             room_restored,
-        }
+        })
     }
     pub fn disconnect(&mut self, player_id: &PlayerId, now_ms: u64) -> DisconnectOutcome {
-        self.session_registry.disconnect_socket(player_id);
+        self.session_registry.disconnect_socket(player_id, now_ms);
         if let Some(room_id) = self.room_memberships.room_for(player_id).cloned() {
             if let Some(room) = self.rooms.get_mut(&room_id) {
                 if let Ok(events) = room.apply(RoomCommand::Disconnect {
@@ -243,14 +308,16 @@ impl RoomManager {
         }
     }
 
-    pub fn send_to(&self, player_id: &PlayerId, message: ServerMessage) {
-        fanout::send_to(self.session_registry.sessions(), player_id, message);
+    pub fn send_to(&mut self, player_id: &PlayerId, message: ServerMessage) {
+        if fanout::send_to(self.session_registry.sessions(), player_id, message).is_err() {
+            self.drop_backpressured_sessions(vec![player_id.clone()]);
+        }
     }
-    pub fn respond(&self, player_id: &PlayerId, request_id: u64, result: ServerResult) {
+    pub fn respond(&mut self, player_id: &PlayerId, request_id: u64, result: ServerResult) {
         self.send_to(player_id, ServerMessage::Response { request_id, result });
     }
 
-    pub fn welcome(&self, connected: &ConnectedPlayer, request_id: u64) {
+    pub fn welcome(&mut self, connected: &ConnectedPlayer, request_id: u64) {
         self.respond(
             &connected.player_id,
             request_id,
@@ -286,6 +353,9 @@ impl RoomManager {
                 self.rooms
                     .suggest_room_names(room_name, self.session_registry.player_name(owner_id)),
             ));
+        }
+        if self.room_count_after_owner_leave(owner_id) >= self.limits.max_rooms {
+            return Err(RoomManagerError::room_limit_reached(self.limits.max_rooms));
         }
 
         let player_name = self.session_registry.player_name_or_id(owner_id);
@@ -581,9 +651,42 @@ impl RoomManager {
         Some(snapshot)
     }
 
-    pub fn flush_messages(&self, messages: OutboundMessages) {
-        fanout::flush_messages(self.session_registry.sessions(), messages);
+    pub fn flush_messages(&mut self, messages: OutboundMessages) {
+        let failed = fanout::flush_messages(self.session_registry.sessions(), messages);
+        self.drop_backpressured_sessions(failed);
     }
+
+    fn drop_backpressured_sessions(&mut self, player_ids: Vec<PlayerId>) {
+        for player_id in player_ids {
+            self.session_registry.drop_socket(&player_id);
+        }
+    }
+
+    pub fn cleanup_abandoned_sessions(&mut self, now_ms: u64) -> Vec<PlayerId> {
+        let protected_player_ids: BTreeSet<PlayerId> =
+            self.room_memberships.player_ids().cloned().collect();
+        self.session_registry.prune_abandoned(
+            now_ms,
+            self.limits.abandoned_session_ttl_ms,
+            &protected_player_ids,
+        )
+    }
+
+    fn room_count_after_owner_leave(&self, owner_id: &PlayerId) -> usize {
+        let Some(previous_room_id) = self.room_memberships.room_for(owner_id) else {
+            return self.rooms.len();
+        };
+        let Some(previous_room) = self.rooms.get(previous_room_id) else {
+            return self.rooms.len();
+        };
+        let player_ids = previous_room.player_ids();
+        if player_ids.len() == 1 && player_ids.first() == Some(owner_id) {
+            self.rooms.len().saturating_sub(1)
+        } else {
+            self.rooms.len()
+        }
+    }
+
     #[cfg(test)]
     fn player_room(&self, player_id: &PlayerId) -> Option<&RoomId> {
         self.room_memberships.room_for(player_id)

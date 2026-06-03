@@ -1,7 +1,8 @@
 use crate::{errors::CoreError, game::GameKind};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GameRules {
     pub game: GameKind,
     pub min_players: usize,

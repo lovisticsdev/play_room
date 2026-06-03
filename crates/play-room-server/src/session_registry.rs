@@ -1,7 +1,7 @@
 use crate::broadcast::OutboundTx;
 use crate::identity::{new_player_id, new_session_token};
 use play_room_core::{PlayerId, SessionToken};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const FALLBACK_DISPLAY_NAME: &str = "Guest";
 
@@ -10,6 +10,7 @@ pub struct SessionRegistry {
     sessions: BTreeMap<PlayerId, OutboundTx>,
     player_names: BTreeMap<PlayerId, String>,
     tokens: BTreeMap<SessionToken, PlayerId>,
+    disconnected_at_ms: BTreeMap<PlayerId, u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -33,6 +34,7 @@ impl SessionRegistry {
         if let Some(token) = token {
             if let Some(player_id) = self.tokens.get(&token).cloned() {
                 self.sessions.insert(player_id.clone(), tx);
+                self.disconnected_at_ms.remove(&player_id);
                 self.player_names
                     .entry(player_id.clone())
                     .or_insert(display_name);
@@ -59,8 +61,56 @@ impl SessionRegistry {
         }
     }
 
-    pub fn disconnect_socket(&mut self, player_id: &PlayerId) {
+    pub fn can_accept_connection(&self, token: Option<&SessionToken>, max_clients: usize) -> bool {
+        if token.and_then(|token| self.tokens.get(token)).is_some() {
+            return true;
+        }
+
+        self.retained_count() < max_clients
+    }
+
+    pub fn disconnect_socket(&mut self, player_id: &PlayerId, now_ms: u64) {
         self.sessions.remove(player_id);
+        if self.player_names.contains_key(player_id) {
+            self.disconnected_at_ms.insert(player_id.clone(), now_ms);
+        }
+    }
+
+    pub fn prune_abandoned(
+        &mut self,
+        now_ms: u64,
+        ttl_ms: u64,
+        protected_player_ids: &BTreeSet<PlayerId>,
+    ) -> Vec<PlayerId> {
+        let expired: Vec<PlayerId> = self
+            .disconnected_at_ms
+            .iter()
+            .filter(|(player_id, disconnected_at_ms)| {
+                !self.sessions.contains_key(*player_id)
+                    && !protected_player_ids.contains(*player_id)
+                    && now_ms.saturating_sub(**disconnected_at_ms) >= ttl_ms
+            })
+            .map(|(player_id, _)| player_id.clone())
+            .collect();
+
+        for player_id in &expired {
+            self.remove_identity(player_id);
+        }
+
+        expired
+    }
+
+    pub fn drop_socket(&mut self, player_id: &PlayerId) -> bool {
+        self.sessions.remove(player_id).is_some()
+    }
+
+    #[cfg(test)]
+    pub fn active_count(&self) -> usize {
+        self.sessions.len()
+    }
+
+    pub fn retained_count(&self) -> usize {
+        self.player_names.len()
     }
 
     pub fn sessions(&self) -> &BTreeMap<PlayerId, OutboundTx> {
@@ -75,6 +125,13 @@ impl SessionRegistry {
         self.player_name(player_id)
             .map(str::to_owned)
             .unwrap_or_else(|| player_id.as_str().to_owned())
+    }
+
+    fn remove_identity(&mut self, player_id: &PlayerId) {
+        self.sessions.remove(player_id);
+        self.player_names.remove(player_id);
+        self.disconnected_at_ms.remove(player_id);
+        self.tokens.retain(|_, owner_id| owner_id != player_id);
     }
 }
 
@@ -97,6 +154,7 @@ mod tests {
         let (second_tx, _) = crate::broadcast::channel();
         let mut registry = SessionRegistry::default();
         let first = registry.connect("Alice".to_owned(), None, first_tx);
+        registry.disconnect_socket(&first.player_id, 1_000);
         let second = registry.connect(
             String::new(),
             Some(first.reconnect_token.clone()),
@@ -108,6 +166,8 @@ mod tests {
         assert!(second.reconnected);
         assert!(!second.reconnect_token_replaced);
         assert_eq!(registry.player_name(&first.player_id), Some("Alice"));
+        assert_eq!(registry.active_count(), 1);
+        assert_eq!(registry.retained_count(), 1);
     }
 
     #[test]
@@ -132,5 +192,63 @@ mod tests {
         assert!(!connected.reconnected);
         assert!(!connected.reconnect_token_replaced);
         assert_eq!(registry.player_name(&connected.player_id), Some("Guest"));
+    }
+
+    #[test]
+    fn active_client_limit_allows_replacing_current_identity() {
+        let (first_tx, _) = crate::broadcast::channel();
+        let (second_tx, _) = crate::broadcast::channel();
+        let mut registry = SessionRegistry::default();
+        let first = registry.connect("Alice".to_owned(), None, first_tx);
+
+        assert!(registry.can_accept_connection(Some(&first.reconnect_token), 1));
+        let second = registry.connect(
+            String::new(),
+            Some(first.reconnect_token.clone()),
+            second_tx,
+        );
+
+        assert_eq!(second.player_id, first.player_id);
+        assert_eq!(registry.active_count(), 1);
+        assert_eq!(registry.retained_count(), 1);
+    }
+
+    #[test]
+    fn retained_client_limit_rejects_new_identity_when_full() {
+        let (tx, _) = crate::broadcast::channel();
+        let mut registry = SessionRegistry::default();
+        registry.connect("Alice".to_owned(), None, tx);
+
+        assert!(!registry.can_accept_connection(None, 1));
+        assert!(!registry.can_accept_connection(Some(&SessionToken::new("missing")), 1));
+    }
+
+    #[test]
+    fn abandoned_disconnected_session_expires_after_ttl() {
+        let (tx, _) = crate::broadcast::channel();
+        let mut registry = SessionRegistry::default();
+        let connected = registry.connect("Alice".to_owned(), None, tx);
+        registry.disconnect_socket(&connected.player_id, 1_000);
+
+        let expired = registry.prune_abandoned(31_000, 30_000, &BTreeSet::new());
+
+        assert_eq!(expired, vec![connected.player_id.clone()]);
+        assert_eq!(registry.player_name(&connected.player_id), None);
+        assert_eq!(registry.retained_count(), 0);
+        assert!(registry.can_accept_connection(Some(&connected.reconnect_token), 1));
+    }
+
+    #[test]
+    fn protected_disconnected_session_does_not_expire() {
+        let (tx, _) = crate::broadcast::channel();
+        let mut registry = SessionRegistry::default();
+        let connected = registry.connect("Alice".to_owned(), None, tx);
+        registry.disconnect_socket(&connected.player_id, 1_000);
+        let protected = BTreeSet::from([connected.player_id.clone()]);
+
+        let expired = registry.prune_abandoned(31_000, 30_000, &protected);
+
+        assert!(expired.is_empty());
+        assert_eq!(registry.player_name(&connected.player_id), Some("Alice"));
     }
 }

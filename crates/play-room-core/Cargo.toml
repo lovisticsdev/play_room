@@ -8,3 +8,4 @@ authors.workspace = true
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
+schemars.workspace = true

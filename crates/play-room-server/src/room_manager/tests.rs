@@ -703,3 +703,124 @@ fn unknown_reconnect_token_starts_new_session_with_notice() {
             )
     }));
 }
+
+#[test]
+fn max_rooms_rejects_new_room_when_limit_is_reached() {
+    let mut manager = RoomManager::new(RoomManagerLimits {
+        max_rooms: 1,
+        ..RoomManagerLimits::default()
+    });
+    manager
+        .create_room(&PlayerId::new("host-one"), "one".to_owned(), None)
+        .unwrap();
+
+    let err = manager
+        .create_room(&PlayerId::new("host-two"), "two".to_owned(), None)
+        .unwrap_err();
+
+    assert_eq!(err.code(), Some(&ErrorCode::RoomLimitReached));
+}
+
+#[test]
+fn max_rooms_allows_replacing_own_single_member_room() {
+    let mut manager = RoomManager::new(RoomManagerLimits {
+        max_rooms: 1,
+        ..RoomManagerLimits::default()
+    });
+    let alice = PlayerId::new("alice");
+    let (old_room_id, _) = manager.create_room(&alice, "old".to_owned(), None).unwrap();
+
+    let (new_room_id, _) = manager.create_room(&alice, "new".to_owned(), None).unwrap();
+
+    assert_ne!(new_room_id, old_room_id);
+    assert!(manager.rooms.get(&old_room_id).is_none());
+    assert_eq!(manager.rooms.len(), 1);
+}
+
+#[test]
+fn max_clients_rejects_new_identity_when_retained_session_limit_is_reached() {
+    let mut manager = RoomManager::new(RoomManagerLimits {
+        max_clients: 1,
+        ..RoomManagerLimits::default()
+    });
+    let (alice_tx, _) = crate::broadcast::channel();
+    manager
+        .try_connect_at("Alice".to_owned(), None, alice_tx, 1_000)
+        .unwrap();
+
+    let (bob_tx, _) = crate::broadcast::channel();
+    let err = manager
+        .try_connect_at("Bob".to_owned(), None, bob_tx, 1_001)
+        .unwrap_err();
+
+    assert_eq!(err.code(), Some(&ErrorCode::ClientLimitReached));
+}
+
+#[test]
+fn abandoned_session_cleanup_frees_client_capacity() {
+    let mut manager = RoomManager::new(RoomManagerLimits {
+        max_clients: 1,
+        abandoned_session_ttl_ms: 30_000,
+        ..RoomManagerLimits::default()
+    });
+    let (alice_tx, _) = crate::broadcast::channel();
+    let alice = manager
+        .try_connect_at("Alice".to_owned(), None, alice_tx, 1_000)
+        .unwrap();
+    manager.disconnect(&alice.player_id, 2_000);
+
+    let (bob_tx, _) = crate::broadcast::channel();
+    let bob = manager
+        .try_connect_at("Bob".to_owned(), None, bob_tx, 32_000)
+        .unwrap();
+
+    assert_ne!(bob.player_id, alice.player_id);
+    assert_eq!(manager.session_registry.player_name(&alice.player_id), None);
+    assert_eq!(
+        manager.session_registry.player_name(&bob.player_id),
+        Some("Bob")
+    );
+}
+
+#[test]
+fn disconnected_in_room_session_is_protected_from_client_cleanup() {
+    let mut manager = RoomManager::new(RoomManagerLimits {
+        max_clients: 1,
+        abandoned_session_ttl_ms: 30_000,
+        ..RoomManagerLimits::default()
+    });
+    let (alice_tx, _) = crate::broadcast::channel();
+    let alice = manager
+        .try_connect_at("Alice".to_owned(), None, alice_tx, 1_000)
+        .unwrap();
+    manager
+        .create_room(&alice.player_id, "room".to_owned(), None)
+        .unwrap();
+    manager.disconnect(&alice.player_id, 2_000);
+
+    let (bob_tx, _) = crate::broadcast::channel();
+    let err = manager
+        .try_connect_at("Bob".to_owned(), None, bob_tx, 32_000)
+        .unwrap_err();
+
+    assert_eq!(err.code(), Some(&ErrorCode::ClientLimitReached));
+    assert_eq!(
+        manager.session_registry.player_name(&alice.player_id),
+        Some("Alice")
+    );
+}
+#[test]
+fn saturated_outbound_queue_drops_active_socket() {
+    let mut manager = RoomManager::default();
+    let (tx, _rx) = crate::broadcast::channel_with_capacity(1);
+    let alice = manager.connect("Alice".to_owned(), None, tx);
+
+    manager.respond(&alice.player_id, 1, ServerResult::Ok);
+    manager.respond(&alice.player_id, 2, ServerResult::Ok);
+
+    assert_eq!(manager.session_registry.active_count(), 0);
+    assert_eq!(
+        manager.session_registry.player_name(&alice.player_id),
+        Some("Alice")
+    );
+}

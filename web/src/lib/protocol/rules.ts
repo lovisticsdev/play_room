@@ -1,7 +1,8 @@
+import { PROTOCOL_VALUES } from './generated';
 import type { GameKind, GameRules, Move, PlayerId, RoomPhase } from './types';
 
-export const RPS_MOVES: Move[] = ['rock', 'paper', 'scissors'];
-export const RPSLS_MOVES: Move[] = ['rock', 'paper', 'scissors', 'lizard', 'spock'];
+export const RPS_MOVES: Move[] = [...PROTOCOL_VALUES.rps_moves];
+export const RPSLS_MOVES: Move[] = [...PROTOCOL_VALUES.moves];
 
 export function defaultRules(game: GameKind = 'rock_paper_scissors_lizard_spock', bestOf: 3 | 5 = 3): GameRules {
   return {

@@ -2,3 +2,4 @@ host = "127.0.0.1"
 port = 7878
 max_rooms = 128
 max_clients = 512
+abandoned_session_ttl_seconds = 1800

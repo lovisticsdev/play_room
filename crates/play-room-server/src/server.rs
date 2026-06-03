@@ -12,7 +12,7 @@ const WEBSOCKET_HANDSHAKE_PREFIX: &[u8] = b"GET";
 
 pub async fn run(config: ServerConfig) -> Result<(), ServerError> {
     let listener = TcpListener::bind(config.addr()).await?;
-    let manager = Arc::new(Mutex::new(RoomManager::default()));
+    let manager = Arc::new(Mutex::new(RoomManager::new(config.room_manager_limits())));
     info!(addr = %listener.local_addr()?, "play room server listening");
 
     loop {

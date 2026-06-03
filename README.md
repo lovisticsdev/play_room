@@ -13,9 +13,12 @@ The browser client is the primary user-facing experience. The terminal client re
 - Participant-aware room flow with players and spectators
 - Best of 3 default two-player match flow with timed rounds and timeout resolution
 - Reconnect tokens with explicit restored-room and stale-token response metadata
+- Enforced room/client limits with abandoned session cleanup
+- Bounded outbound queues so stalled clients are dropped instead of growing memory
 - 90-second participant seat protection after disconnect, followed by spectator demotion and timed name cleanup
 - RPS and RPSLS move support
 - Unique room names, room-scoped display-name checks, and structured conflict errors
+- Rust-generated web protocol constants and JSON Schema for browser validation
 - Workspace integration tests and executable scripted fixtures
 - Warning-clean Rust checks with clippy warnings denied
 
@@ -68,6 +71,14 @@ The default server config listens on:
 
 ```text
 127.0.0.1:7878
+```
+
+`examples/server.toml` also sets room/client quotas and the abandoned-session cleanup TTL:
+
+```toml
+max_rooms = 128
+max_clients = 512
+abandoned_session_ttl_seconds = 1800
 ```
 
 Start the browser client:
@@ -132,7 +143,7 @@ Then submit moves from each client:
 /move scissors
 ```
 
-The server broadcasts room events and authoritative snapshots as the match progresses. Competitive rooms are intentionally two-player, and rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and match notifications remain clear. Disconnected participants keep their seat for 90 seconds; after that they become disconnected spectators for another 90-second name-reservation window. If they still do not reconnect, the server removes them from the room and frees the display name. Move submissions are acknowledged without revealing the selected move until the round resolves.
+The server broadcasts room events and authoritative snapshots as the match progresses. Outbound queues are bounded; a client that stops consuming server messages is dropped and can reconnect with its token. Competitive rooms are intentionally two-player, and rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and match notifications remain clear. Disconnected participants keep their seat for 90 seconds; after that they become disconnected spectators for another 90-second name-reservation window. If they still do not reconnect, the server removes them from the room and frees the display name. Move submissions are acknowledged without revealing the selected move until the round resolves.
 
 ## Client Commands
 
@@ -159,7 +170,7 @@ The same JSON envelope is available through two transports:
 - TCP clients send newline-delimited JSON.
 - Browser clients send JSON in WebSocket text frames.
 
-Each client request includes a numeric `request_id`; server messages are responses, room events, or room snapshots. Welcome responses explicitly report whether reconnect restored an identity, replaced a stale token, and restored room membership. Clients should treat snapshots as authoritative.
+Each client request includes a numeric `request_id`; server messages are responses, room events, or room snapshots. Welcome responses explicitly report whether reconnect restored an identity, replaced a stale token, and restored room membership. Clients should treat snapshots as authoritative. The browser protocol constants in `web/src/lib/protocol/generated.ts` and JSON Schema in `web/src/lib/protocol/schema.ts` are generated from Rust serde DTO metadata. Browser WebSocket messages are validated with AJV before they reach application state.
 
 See [docs/protocol.md](docs/protocol.md) for message examples and reconnect behavior.
 
@@ -188,11 +199,12 @@ For the web client, run:
 
 ```bash
 cd web
+npm run generate:protocol
 npm run check
 npm run build
 ```
 
-The integration suite covers protocol round-trips, welcome reconnect metadata, two-player matches, spectator restrictions, reconnect flow, stale reconnect-token handling, timeout resolution, move privacy, disconnect expiry behavior, and every JSON fixture in `examples/scripted_clients/`.
+The integration suite covers protocol round-trips, generated web protocol constant/schema drift, welcome reconnect metadata, two-player matches, spectator restrictions, reconnect flow, stale reconnect-token handling, timeout resolution, move privacy, disconnect expiry behavior, and every JSON fixture in `examples/scripted_clients/`.
 
 ## Repository Notes
 

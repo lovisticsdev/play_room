@@ -1,9 +1,10 @@
 use crate::game::RoundResult;
 use crate::ids::PlayerId;
 use crate::player::PlayerRole;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "event")]
 pub enum RoomEvent {
     PlayerJoined {

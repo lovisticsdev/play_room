@@ -1,4 +1,5 @@
 use crate::errors::ServerError;
+use crate::room_manager::RoomManagerLimits;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -17,12 +18,20 @@ pub struct ServerArgs {
     pub port: Option<u16>,
 }
 
+const DEFAULT_ABANDONED_SESSION_TTL_SECONDS: u64 = 30 * 60;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub max_rooms: usize,
     pub max_clients: usize,
+    #[serde(default = "default_abandoned_session_ttl_seconds")]
+    pub abandoned_session_ttl_seconds: u64,
+}
+
+fn default_abandoned_session_ttl_seconds() -> u64 {
+    DEFAULT_ABANDONED_SESSION_TTL_SECONDS
 }
 
 impl Default for ServerConfig {
@@ -32,6 +41,7 @@ impl Default for ServerConfig {
             port: 7878,
             max_rooms: 128,
             max_clients: 512,
+            abandoned_session_ttl_seconds: DEFAULT_ABANDONED_SESSION_TTL_SECONDS,
         }
     }
 }
@@ -56,5 +66,13 @@ impl ServerConfig {
 
     pub fn addr(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+
+    pub fn room_manager_limits(&self) -> RoomManagerLimits {
+        RoomManagerLimits {
+            max_rooms: self.max_rooms,
+            max_clients: self.max_clients,
+            abandoned_session_ttl_ms: self.abandoned_session_ttl_seconds.saturating_mul(1_000),
+        }
     }
 }

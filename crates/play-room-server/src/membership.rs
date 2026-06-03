@@ -18,6 +18,10 @@ impl RoomMemberships {
     pub fn remove(&mut self, player_id: &PlayerId) {
         self.player_rooms.remove(player_id);
     }
+
+    pub fn player_ids(&self) -> impl Iterator<Item = &PlayerId> {
+        self.player_rooms.keys()
+    }
 }
 
 #[cfg(test)]

@@ -1,11 +1,17 @@
+import type { PROTOCOL_VALUES } from './generated';
+
+type ProtocolValues = typeof PROTOCOL_VALUES;
+
 export type Id = string;
 export type PlayerId = Id;
 export type RoomId = Id;
 export type SessionToken = Id;
 
-export type GameKind = 'rock_paper_scissors' | 'rock_paper_scissors_lizard_spock';
-export type Move = 'rock' | 'paper' | 'scissors' | 'lizard' | 'spock';
-export type PlayerRole = 'participant' | 'spectator';
+export type GameKind = ProtocolValues['game_kinds'][number];
+export type Move = ProtocolValues['moves'][number];
+export type PlayerRole = ProtocolValues['player_roles'][number];
+export type ErrorCode = ProtocolValues['error_codes'][number];
+export type RoundEndReason = ProtocolValues['round_end_reasons'][number];
 
 export interface GameRules {
   game: GameKind;
@@ -66,8 +72,6 @@ export type RoundOutcome =
   | { win: { winner: PlayerId } }
   | { timeout_win: { winner: PlayerId } };
 
-export type RoundEndReason = 'all_moves_submitted' | 'timeout' | 'player_left';
-
 export interface RoundResult {
   round: number;
   reason: RoundEndReason;
@@ -116,17 +120,6 @@ export interface WelcomeState {
   stale_token_replaced: boolean;
   room_restored: boolean;
 }
-
-export type ErrorCode =
-  | 'invalid_request'
-  | 'room_not_found'
-  | 'room_name_exists'
-  | 'player_name_exists'
-  | 'room_full'
-  | 'not_in_room'
-  | 'match_not_finished'
-  | 'host_only'
-  | 'invalid_action';
 
 export type ServerResult =
   | { status: 'ok' }

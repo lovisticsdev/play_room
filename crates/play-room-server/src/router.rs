@@ -13,7 +13,7 @@ pub async fn route(
     let request_id = envelope.request_id;
     match envelope.request {
         ClientRequest::Connect { .. } => {
-            let locked = manager.lock().await;
+            let mut locked = manager.lock().await;
             locked.respond(
                 &player_id,
                 request_id,
@@ -21,18 +21,13 @@ pub async fn route(
             );
         }
         ClientRequest::Ping => {
-            let locked = manager.lock().await;
+            let mut locked = manager.lock().await;
             locked.respond(&player_id, request_id, ServerResult::Pong);
         }
         ClientRequest::ListRooms => {
-            let locked = manager.lock().await;
-            locked.respond(
-                &player_id,
-                request_id,
-                ServerResult::RoomList {
-                    rooms: locked.list_rooms(),
-                },
-            );
+            let mut locked = manager.lock().await;
+            let rooms = locked.list_rooms();
+            locked.respond(&player_id, request_id, ServerResult::RoomList { rooms });
         }
         ClientRequest::CreateRoom { name, rules } => {
             let mut locked = manager.lock().await;
@@ -41,7 +36,7 @@ pub async fn route(
                     locked.respond(&player_id, request_id, ServerResult::Ok);
                     locked.flush_messages(messages);
                 }
-                Err(error) => respond_error(&locked, &player_id, request_id, error),
+                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
             }
         }
         ClientRequest::JoinRoom { room_id } => {
@@ -51,7 +46,7 @@ pub async fn route(
                     locked.respond(&player_id, request_id, ServerResult::Ok);
                     locked.flush_messages(messages);
                 }
-                Err(error) => respond_error(&locked, &player_id, request_id, error),
+                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
             }
         }
         ClientRequest::SpectateRoom { room_id } => {
@@ -61,7 +56,7 @@ pub async fn route(
                     locked.respond(&player_id, request_id, ServerResult::Ok);
                     locked.flush_messages(messages);
                 }
-                Err(error) => respond_error(&locked, &player_id, request_id, error),
+                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
             }
         }
         ClientRequest::LeaveRoom => {
@@ -71,7 +66,7 @@ pub async fn route(
                     locked.respond(&player_id, request_id, ServerResult::Ok);
                     locked.flush_messages(messages);
                 }
-                Err(error) => respond_error(&locked, &player_id, request_id, error),
+                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
             }
         }
         ClientRequest::SetReady { ready } => {
@@ -123,12 +118,12 @@ async fn apply_room_command(
                 schedule_round_timeout(manager, room_id, round, deadline_ms);
             }
         }
-        Err(error) => respond_error(&locked, &player_id, request_id, error),
+        Err(error) => respond_error(&mut locked, &player_id, request_id, error),
     }
 }
 
 fn respond_error(
-    manager: &RoomManager,
+    manager: &mut RoomManager,
     player_id: &play_room_core::PlayerId,
     request_id: u64,
     error: RoomManagerError,

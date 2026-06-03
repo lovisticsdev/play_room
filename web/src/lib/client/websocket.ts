@@ -13,6 +13,7 @@ const REQUEST_TIMEOUT_MS = 10000;
 
 export class PlayRoomSocket {
   private socket: WebSocket | null = null;
+  private connectionGeneration = 0;
   private nextRequestId = 1;
   private pending = new Map<number, PendingRequest>();
   private messageListeners = new Set<Listener<ServerMessage>>();
@@ -25,24 +26,41 @@ export class PlayRoomSocket {
   }
 
   connect(url: string): Promise<void> {
-    this.close();
+    this.close(new Error('Socket replaced by a new connection'));
+    const generation = this.connectionGeneration + 1;
+    this.connectionGeneration = generation;
 
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(url);
       this.socket = socket;
 
-      socket.addEventListener('open', () => resolve(), { once: true });
+      socket.addEventListener(
+        'open',
+        () => {
+          if (!this.isCurrentSocket(socket, generation)) return;
+          resolve();
+        },
+        { once: true },
+      );
+
       socket.addEventListener(
         'error',
         (event) => {
+          if (!this.isCurrentSocket(socket, generation)) return;
           this.errorListeners.forEach((listener) => listener(event));
           reject(new Error(`WebSocket connection failed: ${url}`));
         },
         { once: true },
       );
 
-      socket.addEventListener('message', (event) => this.handleMessage(event.data));
+      socket.addEventListener('message', (event) => {
+        if (!this.isCurrentSocket(socket, generation)) return;
+        this.handleMessage(event.data);
+      });
+
       socket.addEventListener('close', (event) => {
+        if (!this.isCurrentOrClosedSocket(socket, generation)) return;
+        if (this.socket === socket) this.socket = null;
         this.rejectPending(new Error('WebSocket closed'));
         this.closeListeners.forEach((listener) => listener(event));
       });
@@ -50,12 +68,13 @@ export class PlayRoomSocket {
   }
 
   request(request: ClientRequest): Promise<ServerResult> {
-    if (!this.isOpen) return Promise.reject(new Error('Socket is not open'));
+    if (!this.isOpen || !this.socket) return Promise.reject(new Error('Socket is not open'));
 
     const request_id = this.nextRequestId;
     this.nextRequestId += 1;
 
     const envelope: ClientEnvelope = { request_id, request };
+    const socket = this.socket;
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -64,15 +83,20 @@ export class PlayRoomSocket {
       }, REQUEST_TIMEOUT_MS);
 
       this.pending.set(request_id, { resolve, reject, timeoutId });
-      this.socket?.send(JSON.stringify(envelope));
+      socket.send(JSON.stringify(envelope));
     });
   }
 
-  close(): void {
-    if (this.socket && this.socket.readyState !== WebSocket.CLOSED) {
-      this.socket.close();
-    }
+  close(error = new Error('WebSocket closed')): void {
+    const socket = this.socket;
+    if (!socket) return;
+
     this.socket = null;
+    this.rejectPending(error);
+
+    if (socket.readyState !== WebSocket.CLOSING && socket.readyState !== WebSocket.CLOSED) {
+      socket.close();
+    }
   }
 
   onMessage(listener: Listener<ServerMessage>): () => void {
@@ -93,6 +117,14 @@ export class PlayRoomSocket {
   onError(listener: Listener<Event>): () => void {
     this.errorListeners.add(listener);
     return () => this.errorListeners.delete(listener);
+  }
+
+  private isCurrentSocket(socket: WebSocket, generation: number): boolean {
+    return this.connectionGeneration === generation && this.socket === socket;
+  }
+
+  private isCurrentOrClosedSocket(socket: WebSocket, generation: number): boolean {
+    return this.connectionGeneration === generation && (this.socket === socket || this.socket === null);
   }
 
   private handleMessage(raw: unknown): void {

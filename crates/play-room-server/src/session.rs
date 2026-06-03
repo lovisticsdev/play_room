@@ -1,4 +1,4 @@
-use crate::broadcast::{channel, send};
+use crate::broadcast::channel;
 use crate::errors::ServerError;
 use crate::room_manager::RoomManager;
 use crate::router::route;
@@ -37,15 +37,30 @@ pub async fn handle_connection(
         return Ok(());
     };
 
-    let connected = {
+    let connect_result = {
         let mut locked = manager.lock().await;
-        let connected = locked.connect(name, reconnect_token, tx.clone());
-        locked.welcome(&connected, first.request_id);
-        locked.flush_messages(connected.messages.clone());
-        connected
+        match locked.try_connect_at(name, reconnect_token, tx, now_ms()) {
+            Ok(connected) => {
+                locked.welcome(&connected, first.request_id);
+                locked.flush_messages(connected.messages.clone());
+                Ok(connected)
+            }
+            Err(error) => Err(error.into_server_result()),
+        }
+    };
+    let connected = match connect_result {
+        Ok(connected) => connected,
+        Err(result) => {
+            let msg = ServerMessage::Response {
+                request_id: first.request_id,
+                result,
+            };
+            writer.write_all(encode_server(&msg)?.as_bytes()).await?;
+            return Ok(());
+        }
     };
 
-    let writer_task = tokio::spawn(async move {
+    let mut writer_task = tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
             match encode_server(&message) {
                 Ok(line) => {
@@ -60,16 +75,32 @@ pub async fn handle_connection(
 
     debug!(player_id = %connected.player_id, "client connected");
 
-    while let Some(line) = lines.next_line().await? {
-        match decode_client(&line) {
-            Ok(envelope) => route(manager.clone(), connected.player_id.clone(), envelope).await,
-            Err(err) => send(
-                &tx,
-                ServerMessage::Response {
-                    request_id: 0,
-                    result: ServerResult::error(err.to_string()),
-                },
-            ),
+    let mut writer_finished = false;
+    loop {
+        tokio::select! {
+            line = lines.next_line() => {
+                let Some(line) = line? else {
+                    break;
+                };
+                match decode_client(&line) {
+                    Ok(envelope) => route(manager.clone(), connected.player_id.clone(), envelope).await,
+                    Err(err) => {
+                        let mut locked = manager.lock().await;
+                        locked.respond(
+                            &connected.player_id,
+                            0,
+                            ServerResult::error(err.to_string()),
+                        );
+                    }
+                }
+            }
+            result = &mut writer_task => {
+                writer_finished = true;
+                if let Err(err) = result {
+                    warn!(?err, "connection writer task failed");
+                }
+                break;
+            }
         }
     }
 
@@ -78,7 +109,7 @@ pub async fn handle_connection(
         locked.disconnect(&connected.player_id, now_ms())
     };
     {
-        let locked = manager.lock().await;
+        let mut locked = manager.lock().await;
         locked.flush_messages(outcome.messages);
     }
     if let Some(expiry) = outcome.seat_expiry {
@@ -88,7 +119,9 @@ pub async fn handle_connection(
         schedule_spectator_expiry(manager.clone(), expiry);
     }
 
-    writer_task.abort();
+    if !writer_finished {
+        writer_task.abort();
+    }
     debug!(player_id = %connected.player_id, "client disconnected");
     Ok(())
 }

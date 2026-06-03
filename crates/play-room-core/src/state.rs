@@ -3,9 +3,10 @@ use crate::ids::{PlayerId, RoomId};
 use crate::player::PlayerRole;
 use crate::rules::GameRules;
 use crate::scoreboard::PlayerScore;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "phase")]
 pub enum RoomPhase {
     Lobby,
@@ -13,7 +14,7 @@ pub enum RoomPhase {
     Finished { winner: Option<PlayerId> },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PlayerView {
     pub id: PlayerId,
     pub name: String,
@@ -27,7 +28,7 @@ pub struct PlayerView {
     pub spectator_expires_at_ms: Option<u64>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RoomSummary {
     pub id: RoomId,
     pub name: String,
@@ -39,7 +40,7 @@ pub struct RoomSummary {
     pub target_score: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RoomSnapshot {
     pub id: RoomId,
     pub name: String,

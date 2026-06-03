@@ -1,7 +1,8 @@
 use play_room_core::{PlayerId, RoomSnapshot, RoomSummary, SessionToken};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     InvalidRequest,
@@ -9,13 +10,15 @@ pub enum ErrorCode {
     RoomNameExists,
     PlayerNameExists,
     RoomFull,
+    RoomLimitReached,
+    ClientLimitReached,
     NotInRoom,
     MatchNotFinished,
     HostOnly,
     InvalidAction,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "status")]
 pub enum ServerResult {
     Ok,

@@ -5,7 +5,7 @@ Play Room is split into crates by responsibility so game rules stay deterministi
 ## Crates
 
 - `play-room-core` owns deterministic room and game state.
-- `play-room-protocol` owns the network message schema and JSON codec.
+- `play-room-protocol` owns the network message schema, JSON codec, protocol tag manifest, JSON Schema generation, and web protocol generator.
 - `play-room-server` owns TCP sockets, WebSocket upgrades, sessions, room registry, broadcast fanout, reconnect tokens, and timers.
 - `play-room-client` owns terminal input/output and client-side connection handling. It is kept as a protocol/debug client, not the primary product surface.
 - `play-room-testkit` owns scripted scenario data structures and test helpers.
@@ -23,16 +23,16 @@ client request
   -> broadcast events and authoritative snapshots
 ```
 
-The central rule is that socket handlers never mutate room internals directly. They convert client requests into core commands and apply those commands through the room state machine. The core returns events; the server broadcasts those events and snapshots.
+The central rule is that socket handlers never mutate room internals directly. They convert client requests into core commands and apply those commands through the room state machine. The core returns events; the server broadcasts those events and snapshots. Protocol tag values and JSON Schemas are derived from Rust serde/schema metadata and checked against the generated browser files during Rust tests.
 
 ## Server Module Boundaries
 
 The server keeps room lifecycle state in `room_manager`, but low-level concerns are split out:
 
-- `fanout` builds outbound room event/snapshot batches and sends messages to connected sessions.
+- `fanout` builds outbound room event/snapshot batches and sends messages to connected sessions through bounded queues.
 - `expiry` owns participant-seat and spectator-name expiry types plus pure expiry/snapshot annotation helpers.
 - `room_registry` owns room storage, room ID/name lookup, case-insensitive room-name checks, suggested alternatives for duplicate names, summaries, and empty-room cleanup checks.
-- `session_registry` owns active outbound sockets, display names, reconnect tokens, and token-to-player lookup.
+- `session_registry` owns active outbound sockets, retained display names, reconnect tokens, token-to-player lookup, retained-session counts, and abandoned-session cleanup.
 - `membership` owns the player-to-current-room mapping used by lifecycle operations.
 - `room_lifecycle` owns stateless helpers for room construction, role-specific player construction, and round-timer extraction.
 - `scheduler` owns Tokio timers for rounds, seat expiry, and spectator cleanup.
@@ -46,7 +46,9 @@ The server owns player sessions and reconnect tokens. A reconnect token restores
 
 Welcome responses expose reconnect outcome metadata. The server reports whether a token restored an existing identity, whether an unknown token was replaced with a fresh session, and whether room membership was restored. If a reconnect token is unknown, the server starts a fresh session with a fresh token and emits a notice instead of silently storing an empty or stale identity.
 
-Room membership is tied to player identity, not the transport connection. A disconnected participant keeps their participant seat for 90 seconds so they can recover from a refresh or network drop without losing score or role. If they do not reconnect during that grace window, the server demotes them to a disconnected spectator, freeing the participant slot. Disconnected spectators then keep the room-scoped display name for another 90 seconds; if they still do not reconnect, the server removes them from the room and frees the name. The reconnect token remains valid for the player identity, but after room membership cleanup it no longer restores that room automatically.
+Room membership is tied to player identity, not the transport connection. A disconnected participant keeps their participant seat for 90 seconds so they can recover from a refresh or network drop without losing score or role. If they do not reconnect during that grace window, the server demotes them to a disconnected spectator, freeing the participant slot. Disconnected spectators then keep the room-scoped display name for another 90 seconds; if they still do not reconnect, the server removes them from the room and frees the name. The reconnect token remains valid for the player identity until abandoned-session cleanup removes disconnected, roomless identities after the configured TTL. Each active socket has a bounded outbound queue; if the queue fills or closes, the server drops that socket and lets normal disconnect/reconnect handling restore the player later.
+
+`max_clients` counts retained player identities: active sockets, disconnected players still in rooms, and disconnected roomless sessions still inside the abandoned-session TTL. Reconnecting with a known token reuses the retained identity and does not consume another client slot. Unknown or new identities require available capacity. `max_rooms` is enforced before creating new rooms, while allowing a player to replace their own single-member room without increasing total room count.
 
 ## Room Ownership
 
@@ -60,4 +62,4 @@ Rooms default to Best of 3. A finished room keeps its final scoreboard and winne
 
 ## Browser Client
 
-The browser client is the primary product surface. Connection, reconnect, room browsing, creation, joining, and spectating live in the Rooms modal. Active room state is rendered through the match surface, participants/spectators rail, scoreboard, and transient notifications.
+The browser client is the primary product surface. Connection, reconnect, room browsing, creation, joining, and spectating live in the Rooms modal. Active room state is rendered through the match surface, participants/spectators rail, scoreboard, and transient notifications. Browser enum unions import generated protocol constants from `web/src/lib/protocol/generated.ts`. Incoming server messages are validated against `web/src/lib/protocol/schema.ts` with AJV, then passed through a small semantic guard for current game invariants such as exactly two active participants.

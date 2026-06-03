@@ -22,8 +22,11 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 ## Server And Protocol Invariants
 
 - Protocol messages round-trip through JSON, including welcome reconnect metadata.
-- Browser WebSocket messages are runtime-validated before being applied to client state.
+- Generated browser protocol constants and JSON Schema are checked against Rust-derived protocol metadata.
+- Browser WebSocket messages are runtime-validated with AJV and generated JSON Schema before being applied to client state.
 - Room names are unique server-wide, case-insensitively.
+- Configured `max_rooms` rejects excess room creation.
+- Configured `max_clients` rejects excess retained player identities while allowing reconnects to existing identities.
 - Joining by room name is predictable and case-insensitive when names are unique.
 - Duplicate room-name errors include suggested alternatives.
 - Duplicate disconnected display-name errors are explicit enough for reconnect guidance.
@@ -32,6 +35,8 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 - Unknown reconnect tokens create a fresh identity, fresh token, explicit stale-token metadata, and explanatory notice.
 - Reconnect before participant-seat expiry preserves the active seat; reconnect after participant-seat expiry but before spectator-name expiry restores the identity as a spectator.
 - Expired spectator cleanup removes room membership and frees the display name.
+- Abandoned disconnected sessions without room membership expire after the configured TTL and free client capacity.
+- Bounded outbound queues report saturation and remove stalled active sockets.
 - Host transfer and empty-room cleanup remain consistent after leave events.
 
 ## Integration And Scenario Coverage

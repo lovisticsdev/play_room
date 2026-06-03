@@ -7,9 +7,11 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "generate:protocol": "cargo run --manifest-path ../Cargo.toml -p play-room-protocol --bin generate-web-protocol"
   },
   "dependencies": {
+    "ajv": "^8.20.0",
     "svelte": "^5.16.0"
   },
   "devDependencies": {

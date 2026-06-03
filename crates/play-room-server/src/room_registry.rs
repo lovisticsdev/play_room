@@ -33,6 +33,10 @@ impl RoomRegistry {
         self.rooms.values().map(GameRoom::summary).collect()
     }
 
+    pub fn len(&self) -> usize {
+        self.rooms.len()
+    }
+
     pub fn resolve_room_id(&self, room_id_or_name: &RoomId) -> Result<RoomId, RoomLookupError> {
         if self.rooms.contains_key(room_id_or_name) {
             return Ok(room_id_or_name.clone());
