@@ -1,4 +1,4 @@
-himport { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { decodeServerMessage, ProtocolDecodeError } from './decode';
 import { PROTOCOL_VERSION } from './generated';
 import type { GameRules } from './types';
