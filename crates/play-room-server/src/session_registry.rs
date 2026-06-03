@@ -5,17 +5,23 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const FALLBACK_DISPLAY_NAME: &str = "Guest";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ConnectionId(u64);
+
 #[derive(Default)]
 pub struct SessionRegistry {
     sessions: BTreeMap<PlayerId, OutboundTx>,
+    connection_ids: BTreeMap<PlayerId, ConnectionId>,
     player_names: BTreeMap<PlayerId, String>,
     tokens: BTreeMap<SessionToken, PlayerId>,
     disconnected_at_ms: BTreeMap<PlayerId, u64>,
+    next_connection_id: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct RegisteredSession {
     pub player_id: PlayerId,
+    pub connection_id: ConnectionId,
     pub reconnect_token: SessionToken,
     pub reconnected: bool,
     pub reconnect_token_replaced: bool,
@@ -33,13 +39,16 @@ impl SessionRegistry {
 
         if let Some(token) = token {
             if let Some(player_id) = self.tokens.get(&token).cloned() {
+                let connection_id = self.next_connection_id();
                 self.sessions.insert(player_id.clone(), tx);
+                self.connection_ids.insert(player_id.clone(), connection_id);
                 self.disconnected_at_ms.remove(&player_id);
                 self.player_names
                     .entry(player_id.clone())
                     .or_insert(display_name);
                 return RegisteredSession {
                     player_id,
+                    connection_id,
                     reconnect_token: token,
                     reconnected: true,
                     reconnect_token_replaced: false,
@@ -49,12 +58,15 @@ impl SessionRegistry {
 
         let player_id = new_player_id();
         let reconnect_token = new_session_token();
+        let connection_id = self.next_connection_id();
         self.sessions.insert(player_id.clone(), tx);
+        self.connection_ids.insert(player_id.clone(), connection_id);
         self.player_names.insert(player_id.clone(), display_name);
         self.tokens
             .insert(reconnect_token.clone(), player_id.clone());
         RegisteredSession {
             player_id,
+            connection_id,
             reconnect_token,
             reconnected: false,
             reconnect_token_replaced: requested_reconnect,
@@ -69,11 +81,21 @@ impl SessionRegistry {
         self.retained_count() < max_clients
     }
 
-    pub fn disconnect_socket(&mut self, player_id: &PlayerId, now_ms: u64) {
+    pub fn disconnect_socket(
+        &mut self,
+        player_id: &PlayerId,
+        connection_id: ConnectionId,
+        now_ms: u64,
+    ) -> bool {
+        if self.connection_ids.get(player_id) != Some(&connection_id) {
+            return false;
+        }
         self.sessions.remove(player_id);
+        self.connection_ids.remove(player_id);
         if self.player_names.contains_key(player_id) {
             self.disconnected_at_ms.insert(player_id.clone(), now_ms);
         }
+        true
     }
 
     pub fn prune_abandoned(
@@ -129,9 +151,18 @@ impl SessionRegistry {
 
     fn remove_identity(&mut self, player_id: &PlayerId) {
         self.sessions.remove(player_id);
+        self.connection_ids.remove(player_id);
         self.player_names.remove(player_id);
         self.disconnected_at_ms.remove(player_id);
         self.tokens.retain(|_, owner_id| owner_id != player_id);
+    }
+
+    fn next_connection_id(&mut self) -> ConnectionId {
+        self.next_connection_id = self
+            .next_connection_id
+            .checked_add(1)
+            .expect("connection id overflow");
+        ConnectionId(self.next_connection_id)
     }
 }
 
@@ -154,7 +185,7 @@ mod tests {
         let (second_tx, _) = crate::broadcast::channel();
         let mut registry = SessionRegistry::default();
         let first = registry.connect("Alice".to_owned(), None, first_tx);
-        registry.disconnect_socket(&first.player_id, 1_000);
+        registry.disconnect_socket(&first.player_id, first.connection_id, 1_000);
         let second = registry.connect(
             String::new(),
             Some(first.reconnect_token.clone()),
@@ -170,6 +201,27 @@ mod tests {
         assert_eq!(registry.retained_count(), 1);
     }
 
+    #[test]
+    fn stale_disconnect_after_active_reconnect_is_ignored() {
+        let (first_tx, _) = crate::broadcast::channel();
+        let (second_tx, _) = crate::broadcast::channel();
+        let mut registry = SessionRegistry::default();
+        let first = registry.connect("Alice".to_owned(), None, first_tx);
+        let second = registry.connect(
+            String::new(),
+            Some(first.reconnect_token.clone()),
+            second_tx,
+        );
+
+        assert_eq!(second.player_id, first.player_id);
+        assert_ne!(second.connection_id, first.connection_id);
+        assert!(!registry.disconnect_socket(&first.player_id, first.connection_id, 1_000));
+        assert_eq!(registry.active_count(), 1);
+        assert_eq!(registry.player_name(&first.player_id), Some("Alice"));
+
+        assert!(registry.disconnect_socket(&second.player_id, second.connection_id, 2_000));
+        assert_eq!(registry.active_count(), 0);
+    }
     #[test]
     fn unknown_token_creates_new_identity_and_replaces_token() {
         let (tx, _) = crate::broadcast::channel();
@@ -228,7 +280,7 @@ mod tests {
         let (tx, _) = crate::broadcast::channel();
         let mut registry = SessionRegistry::default();
         let connected = registry.connect("Alice".to_owned(), None, tx);
-        registry.disconnect_socket(&connected.player_id, 1_000);
+        registry.disconnect_socket(&connected.player_id, connected.connection_id, 1_000);
 
         let expired = registry.prune_abandoned(31_000, 30_000, &BTreeSet::new());
 
@@ -243,7 +295,7 @@ mod tests {
         let (tx, _) = crate::broadcast::channel();
         let mut registry = SessionRegistry::default();
         let connected = registry.connect("Alice".to_owned(), None, tx);
-        registry.disconnect_socket(&connected.player_id, 1_000);
+        registry.disconnect_socket(&connected.player_id, connected.connection_id, 1_000);
         let protected = BTreeSet::from([connected.player_id.clone()]);
 
         let expired = registry.prune_abandoned(31_000, 30_000, &protected);

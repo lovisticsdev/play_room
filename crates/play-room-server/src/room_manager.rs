@@ -5,7 +5,7 @@ use crate::fanout::{self, OutboundMessages};
 use crate::membership::RoomMemberships;
 use crate::room_lifecycle::{self, RoundTimer};
 use crate::room_registry::{RoomLookupError, RoomRegistry};
-use crate::session_registry::SessionRegistry;
+use crate::session_registry::{ConnectionId, SessionRegistry};
 use play_room_core::{
     CoreError, GameRules, PlayerId, PlayerRole, RoomCommand, RoomEvent, RoomId, RoomSnapshot,
     RoomSummary, SessionToken,
@@ -47,6 +47,7 @@ impl Default for RoomManagerLimits {
 #[derive(Clone, Debug)]
 pub struct ConnectedPlayer {
     pub player_id: PlayerId,
+    pub connection_id: ConnectionId,
     pub reconnect_token: SessionToken,
     pub messages: OutboundMessages,
     pub reconnected: bool,
@@ -272,6 +273,7 @@ impl RoomManager {
 
         Ok(ConnectedPlayer {
             player_id,
+            connection_id: registered.connection_id,
             reconnect_token,
             messages,
             reconnected: registered.reconnected,
@@ -279,8 +281,22 @@ impl RoomManager {
             room_restored,
         })
     }
-    pub fn disconnect(&mut self, player_id: &PlayerId, now_ms: u64) -> DisconnectOutcome {
-        self.session_registry.disconnect_socket(player_id, now_ms);
+    pub fn disconnect(
+        &mut self,
+        player_id: &PlayerId,
+        connection_id: ConnectionId,
+        now_ms: u64,
+    ) -> DisconnectOutcome {
+        if !self
+            .session_registry
+            .disconnect_socket(player_id, connection_id, now_ms)
+        {
+            return DisconnectOutcome {
+                messages: Vec::new(),
+                seat_expiry: None,
+                spectator_expiry: None,
+            };
+        }
         if let Some(room_id) = self.room_memberships.room_for(player_id).cloned() {
             if let Some(room) = self.rooms.get_mut(&room_id) {
                 if let Ok(events) = room.apply(RoomCommand::Disconnect {

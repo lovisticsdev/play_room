@@ -23,7 +23,7 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 
 - Protocol messages round-trip through JSON, including welcome reconnect metadata.
 - Generated browser protocol constants and JSON Schema are checked against Rust-derived protocol metadata.
-- Browser WebSocket messages are runtime-validated with AJV and generated JSON Schema before being applied to client state.
+- Browser WebSocket messages are runtime-validated with AJV and generated JSON Schema before being applied to client state, with decoder unit tests for malformed and unsupported messages.
 - Room names are unique server-wide, case-insensitively.
 - Configured `max_rooms` rejects excess room creation.
 - Configured `max_clients` rejects excess retained player identities while allowing reconnects to existing identities.
@@ -32,6 +32,7 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 - Duplicate disconnected display-name errors are explicit enough for reconnect guidance.
 - Moving between rooms preserves old-room leave events and snapshots.
 - Reconnect restores the same player identity when the token is valid and reports whether room membership was restored.
+- Stale disconnects from superseded same-token transports are ignored so an old socket cannot mark the active reconnect offline.
 - Unknown reconnect tokens create a fresh identity, fresh token, explicit stale-token metadata, and explanatory notice.
 - Reconnect before participant-seat expiry preserves the active seat; reconnect after participant-seat expiry but before spectator-name expiry restores the identity as a spectator.
 - Expired spectator cleanup removes room membership and frees the display name.
@@ -58,7 +59,7 @@ Current high-value flows:
 - timeout flow
 - scripted JSON scenarios
 
-The committed web checks are `svelte-check` and a Vite production build. Browser automation and store-level unit tests are not part of the current suite.
+The committed web checks are Vitest decoder tests, `svelte-check`, and a Vite production build. Browser automation and broader store-level unit tests are not part of the current suite.
 
 ## Manual Checks
 
@@ -74,6 +75,7 @@ For the browser client:
 
 ```bash
 cd web
+npm test
 npm run check
 npm run build
 ```

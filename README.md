@@ -12,7 +12,7 @@ The browser client is the primary user-facing experience. The terminal client re
 - Deterministic core room state machine
 - Participant-aware room flow with players and spectators
 - Best of 3 default two-player match flow with timed rounds and timeout resolution
-- Reconnect tokens with explicit restored-room and stale-token response metadata
+- Reconnect tokens with explicit restored-room/stale-token metadata and stale socket-disconnect protection
 - Enforced room/client limits with abandoned session cleanup
 - Bounded outbound queues so stalled clients are dropped instead of growing memory
 - 90-second participant seat protection after disconnect, followed by spectator demotion and timed name cleanup
@@ -200,12 +200,13 @@ For the web client, run:
 ```bash
 cd web
 npm run generate:protocol
+npm test
 npm run check
 npm run build
 ```
 
-The integration suite covers protocol round-trips, generated web protocol constant/schema drift, welcome reconnect metadata, two-player matches, spectator restrictions, reconnect flow, stale reconnect-token handling, timeout resolution, move privacy, disconnect expiry behavior, and every JSON fixture in `examples/scripted_clients/`.
+The integration suite covers protocol round-trips, generated web protocol constant/schema drift, welcome reconnect metadata, two-player matches, spectator restrictions, reconnect flow, stale reconnect-token handling, stale socket-disconnect protection, timeout resolution, move privacy, disconnect expiry behavior, and every JSON fixture in `examples/scripted_clients/`. The web test suite covers runtime server-message decoding for malformed JSON, unknown message kinds, unsupported protocol versions, invalid room rules, and valid welcome/snapshot messages.
 
 ## Repository Notes
 
-`Cargo.lock` is committed because this workspace includes runnable binaries. Build output, local runtime files, logs, package installs, generated web output, and editor metadata are ignored.
+`Cargo.lock` is committed because this workspace includes runnable binaries. Web build output, local runtime files, logs, package installs, and editor metadata are ignored. Rust-generated browser protocol files under `web/src/lib/protocol/` are committed intentionally so the browser can validate server messages without a generation step at runtime.

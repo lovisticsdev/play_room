@@ -124,7 +124,7 @@ pub async fn handle_websocket_connection(
 
     let outcome = {
         let mut locked = manager.lock().await;
-        locked.disconnect(&connected.player_id, now_ms())
+        locked.disconnect(&connected.player_id, connected.connection_id, now_ms())
     };
     {
         let mut locked = manager.lock().await;

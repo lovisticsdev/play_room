@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "generate:protocol": "cargo run --manifest-path ../Cargo.toml -p play-room-protocol --bin generate-web-protocol"
+    "generate:protocol": "cargo run --manifest-path ../Cargo.toml -p play-room-protocol --bin generate-web-protocol",
+    "test": "vitest run"
   },
   "dependencies": {
     "ajv": "^8.20.0",
@@ -19,6 +20,7 @@
     "@tsconfig/svelte": "^5.0.4",
     "svelte-check": "^4.1.1",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^4.1.8"
   }
 }
