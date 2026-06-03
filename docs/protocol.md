@@ -9,7 +9,7 @@ The server listens on one host/port and upgrades HTTP WebSocket handshakes while
 
 ## Protocol Metadata
 
-Rust protocol and core DTOs are the source for protocol tag values and JSON Schema. The `play-room-protocol` crate serializes representative serde values into a tag manifest, generates JSON Schema for client/server envelopes, and writes `web/src/lib/protocol/generated.ts` plus `web/src/lib/protocol/schema.ts`.
+Rust protocol and core DTOs are the source for protocol tag values, structural browser types, and JSON Schema. The `play-room-protocol` crate serializes representative serde values into a tag manifest, emits structural TypeScript types, generates JSON Schema for client/server envelopes, and writes `web/src/lib/protocol/generated.ts`, `web/src/lib/protocol/generated-types.ts`, and `web/src/lib/protocol/schema.ts`.
 
 Regenerate the browser protocol files with either command:
 
@@ -22,7 +22,7 @@ cd web
 npm run generate:protocol
 ```
 
-`cargo test --workspace` includes drift tests that compare the checked-in generated constants and schema with Rust-generated output. The web client imports generated constants for enum unions and uses AJV with the generated server-message schema for runtime WebSocket validation. A small semantic guard still enforces domain constraints that JSON Schema does not express, such as currently supported two-player rules.
+`cargo test --workspace` includes drift tests that compare the checked-in generated constants, structural types, and schema with Rust-generated output. The web client imports generated constants/types and uses AJV with the generated server-message schema for runtime WebSocket validation. A small semantic guard still enforces domain constraints that JSON Schema does not express, such as currently supported two-player rules.
 
 ## Client Request
 

@@ -13,7 +13,9 @@ pub mod version;
 pub use codec::{decode_client, decode_server, encode_client, encode_server};
 pub use error::ProtocolError;
 pub use event::ServerEvent;
-pub use manifest::{protocol_manifest, typescript_constants_module, ProtocolManifest};
+pub use manifest::{
+    protocol_manifest, typescript_constants_module, typescript_types_module, ProtocolManifest,
+};
 pub use message::{ClientEnvelope, ServerMessage};
 pub use request::ClientRequest;
 pub use response::{ErrorCode, ServerResult};

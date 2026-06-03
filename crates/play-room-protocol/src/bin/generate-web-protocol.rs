@@ -1,4 +1,6 @@
-use play_room_protocol::{typescript_constants_module, typescript_schema_module};
+use play_room_protocol::{
+    typescript_constants_module, typescript_schema_module, typescript_types_module,
+};
 use std::{env, fs, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,6 +15,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         typescript_constants_module(),
     )?;
     write_file(output_dir.join("schema.ts"), typescript_schema_module())?;
+    write_file(
+        output_dir.join("generated-types.ts"),
+        typescript_types_module(),
+    )?;
     Ok(())
 }
 

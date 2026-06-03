@@ -18,7 +18,7 @@ The browser client is the primary user-facing experience. The terminal client re
 - 90-second participant seat protection after disconnect, followed by spectator demotion and timed name cleanup
 - RPS and RPSLS move support
 - Unique room names, room-scoped display-name checks, and structured conflict errors
-- Rust-generated web protocol constants and JSON Schema for browser validation
+- Rust-generated web protocol constants, structural TypeScript types, and JSON Schema for browser validation
 - Workspace integration tests and executable scripted fixtures
 - Warning-clean Rust checks with clippy warnings denied
 
@@ -170,7 +170,7 @@ The same JSON envelope is available through two transports:
 - TCP clients send newline-delimited JSON.
 - Browser clients send JSON in WebSocket text frames.
 
-Each client request includes a numeric `request_id`; server messages are responses, room events, or room snapshots. Welcome responses explicitly report whether reconnect restored an identity, replaced a stale token, and restored room membership. Clients should treat snapshots as authoritative. The browser protocol constants in `web/src/lib/protocol/generated.ts` and JSON Schema in `web/src/lib/protocol/schema.ts` are generated from Rust serde DTO metadata. Browser WebSocket messages are validated with AJV before they reach application state.
+Each client request includes a numeric `request_id`; server messages are responses, room events, or room snapshots. Welcome responses explicitly report whether reconnect restored an identity, replaced a stale token, and restored room membership. Clients should treat snapshots as authoritative. The browser protocol constants in `web/src/lib/protocol/generated.ts`, structural types in `web/src/lib/protocol/generated-types.ts`, and JSON Schema in `web/src/lib/protocol/schema.ts` are generated from the Rust protocol crate. Browser WebSocket messages are validated with AJV before they reach application state.
 
 See [docs/protocol.md](docs/protocol.md) for message examples and reconnect behavior.
 
@@ -205,8 +205,8 @@ npm run check
 npm run build
 ```
 
-The integration suite covers protocol round-trips, generated web protocol constant/schema drift, welcome reconnect metadata, two-player matches, spectator restrictions, reconnect flow, stale reconnect-token handling, stale socket-disconnect protection, timeout resolution, move privacy, disconnect expiry behavior, and every JSON fixture in `examples/scripted_clients/`. The web test suite covers runtime server-message decoding for malformed JSON, unknown message kinds, unsupported protocol versions, invalid room rules, and valid welcome/snapshot messages.
+The integration suite covers protocol round-trips, generated web protocol constant/type/schema drift, welcome reconnect metadata, two-player matches, spectator restrictions, reconnect flow, stale reconnect-token handling, stale socket-disconnect protection, timeout resolution, move privacy, disconnect expiry behavior, and every JSON fixture in `examples/scripted_clients/`. The web test suite covers runtime server-message decoding for malformed JSON, unknown message kinds, unsupported protocol versions, invalid room rules, and valid welcome/snapshot messages.
 
 ## Repository Notes
 
-`Cargo.lock` is committed because this workspace includes runnable binaries. Web build output, local runtime files, logs, package installs, and editor metadata are ignored. Rust-generated browser protocol files under `web/src/lib/protocol/` are committed intentionally so the browser can validate server messages without a generation step at runtime.
+`Cargo.lock` is committed because this workspace includes runnable binaries. Web build output, local runtime files, logs, package installs, and editor metadata are ignored. Rust-generated browser protocol files under `web/src/lib/protocol/` are committed intentionally so the browser can type and validate server messages without a generation step at runtime.

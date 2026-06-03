@@ -22,7 +22,7 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 ## Server And Protocol Invariants
 
 - Protocol messages round-trip through JSON, including welcome reconnect metadata.
-- Generated browser protocol constants and JSON Schema are checked against Rust-derived protocol metadata.
+- Generated browser protocol constants, structural TypeScript types, and JSON Schema are checked against Rust-generated protocol output.
 - Browser WebSocket messages are runtime-validated with AJV and generated JSON Schema before being applied to client state, with decoder unit tests for malformed and unsupported messages.
 - Room names are unique server-wide, case-insensitively.
 - Configured `max_rooms` rejects excess room creation.
