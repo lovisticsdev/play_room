@@ -10,21 +10,14 @@ The browser client is the primary user-facing experience. The terminal client re
 - Svelte + TypeScript web client for real-time room and game visualization
 - Terminal client with room, ready, move, spectator, and reconnect commands
 - Deterministic core room state machine
-- Participant-aware room flow with players and spectators
 - Best of 3 default two-player match flow with timed rounds and timeout resolution
-- Reconnect tokens with explicit restored-room/stale-token metadata and stale socket-disconnect protection
-- Enforced room/client limits with abandoned session cleanup
-- Bounded outbound queues so stalled clients are dropped instead of growing memory
+- Immediate forfeit resolution when an active participant leaves or disconnects mid-match
+- Reconnect tokens with restored-room/stale-token metadata and stale socket-disconnect protection
 - 30-second participant seat protection after disconnect, followed by 60-second spectator name cleanup
-- RPS and RPSLS move support
-- Unique room names, room-scoped display-name checks, and structured conflict errors
-- Rust-generated web protocol constants, structural TypeScript types, and JSON Schema for browser validation
+- Enforced room/client limits, abandoned session cleanup, and bounded outbound queues
+- Unique room names, room-scoped display-name checks, and structured conflict suggestions
+- Rust-generated browser protocol constants, TypeScript types, and JSON Schema validation
 - Workspace integration tests and executable scripted fixtures
-- Warning-clean Rust checks with clippy warnings denied
-
-## Browser Client
-
-The Svelte client is the primary interface. It uses a Rooms modal for connection, reconnect, room browsing, room creation, joining, and spectating. Active room state is rendered through the match surface, participants/spectators rail, scoreboard, and transient notifications. Betting and money mechanics are not part of this project.
 
 ## Workspace Layout
 
@@ -32,34 +25,25 @@ The Svelte client is the primary interface. It uses a Rooms modal for connection
 play_room/
 |-- crates/
 |   |-- play-room-core/      # deterministic game rules, room state, commands, events
-|   |-- play-room-protocol/  # request, response, event, snapshot, and JSON codec types
-|   |-- play-room-server/    # async TCP/WebSocket server, timers, sessions, room registry, lifecycle, expiry, fanout
+|   |-- play-room-protocol/  # request/response DTOs, JSON codec, web protocol generation
+|   |-- play-room-server/    # TCP/WebSocket server, sessions, rooms, timers, fanout
 |   |-- play-room-client/    # terminal protocol/debug client
 |   `-- play-room-testkit/   # scripted scenario and test helper utilities
 |-- web/                     # primary Svelte browser client
-|-- docs/                    # architecture, protocol, state machine, and testing notes
-|-- examples/                # server config and executable scripted client fixtures
-|-- scripts/                 # convenience run scripts
+|-- examples/                # server config and scripted client fixtures
 |-- tests/                   # workspace integration tests
 |-- Cargo.toml
 |-- Cargo.lock
 `-- README.md
 ```
 
-
 ## Requirements
 
 - Rust stable toolchain
 - Node.js 18+ for the browser client
-- PowerShell, Bash, or any shell capable of running Cargo and npm commands
+- Cargo and npm available from your shell
 
-## Quick Start
-
-Run the Rust test suite first:
-
-```bash
-cargo test --workspace
-```
+## Run The App
 
 Start the server:
 
@@ -67,21 +51,31 @@ Start the server:
 cargo run -p play-room-server -- --config examples/server.toml
 ```
 
-The default server config listens on:
+`cargo run -p play-room-server` builds and runs the `play-room-server` package. The `--` separates Cargo arguments from application arguments, so `--config examples/server.toml` is passed to the server itself.
+
+The sample config listens on:
 
 ```text
 127.0.0.1:7878
 ```
 
-`examples/server.toml` also sets room/client quotas and the abandoned-session cleanup TTL:
+It also sets room/client quotas and abandoned-session cleanup:
 
 ```toml
+host = "127.0.0.1"
+port = 7878
 max_rooms = 128
 max_clients = 512
 abandoned_session_ttl_seconds = 1800
 ```
 
-Start the browser client:
+The server uses `examples/server.toml` by default and falls back to built-in defaults if the file is missing. You can override host or port from the CLI:
+
+```bash
+cargo run -p play-room-server -- --host 127.0.0.1 --port 7878
+```
+
+Start the browser client in another shell:
 
 ```bash
 cd web
@@ -95,29 +89,30 @@ Open:
 http://127.0.0.1:5173
 ```
 
-The browser client connects to the server through WebSocket at:
+The browser connects to:
 
 ```text
 ws://127.0.0.1:7878/ws
 ```
 
-Helper scripts are also available:
-
-```powershell
-.\scripts\run-server.ps1
-.\scripts\run-web.ps1
-.\scripts\run-client.ps1 -Name alice
-.\scripts\run-client.ps1 -Name bob
-```
+Run terminal clients without helper wrappers:
 
 ```bash
-bash scripts/run-server.sh
-bash scripts/run-web.sh
-bash scripts/run-client.sh alice
-bash scripts/run-client.sh bob
+cargo run -p play-room-client -- --name alice
+cargo run -p play-room-client -- --name bob
 ```
 
-See [scripts/README.md](scripts/README.md) for options.
+With explicit server address:
+
+```bash
+cargo run -p play-room-client -- --name alice --host 127.0.0.1 --port 7878
+```
+
+With a reconnect token:
+
+```bash
+cargo run -p play-room-client -- --name alice --reconnect-token session-...
+```
 
 ## Terminal Walkthrough
 
@@ -143,9 +138,7 @@ Then submit moves from each client:
 /move scissors
 ```
 
-The server broadcasts room events and authoritative snapshots as the match progresses. Outbound queues are bounded; a client that stops consuming server messages is dropped and can reconnect with its token. Competitive rooms are intentionally two-player, and rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and match notifications remain clear. Disconnected participants keep their seat for 30 seconds; after that they become disconnected spectators for a 60-second name-reservation window. If they still do not reconnect, the server removes them from the room and frees the display name. Move submissions are acknowledged without revealing the selected move until the round resolves.
-
-## Client Commands
+Useful terminal commands:
 
 ```text
 /help                         show available commands
@@ -153,7 +146,7 @@ The server broadcasts room events and authoritative snapshots as the match progr
 /create <room name>           create and join a room as host
 /join <room_id|room_name>     join an existing room by ID or exact name
 /leave                        leave the current room
-/again | /next                 reset a finished match as host
+/again | /next                reset a finished match as host
 /ready                        mark yourself ready
 /unready                      clear your ready state
 /move <move>                  submit rock, paper, scissors, lizard, or spock
@@ -163,6 +156,67 @@ The server broadcasts room events and authoritative snapshots as the match progr
 /quit                         disconnect the client
 ```
 
+## Architecture
+
+Play Room is split by responsibility so game rules stay deterministic, protocol types stay reusable, and transports remain replaceable.
+
+- `play-room-core` owns deterministic room and game state. It has no sockets, async runtime, filesystem access, or protocol encoding.
+- `play-room-protocol` owns the network message schema, JSON codec, protocol tag manifest, structural TypeScript type generation, JSON Schema generation, and web protocol generator.
+- `play-room-server` owns TCP sockets, WebSocket upgrades, sessions, room registry, broadcast fanout, reconnect tokens, and timers.
+- `play-room-client` owns terminal input/output and client-side connection handling.
+- `play-room-testkit` owns scripted scenario data structures and test helpers.
+- `web` owns the primary Svelte browser client and visual room/game state rendering.
+
+Data flow:
+
+```text
+client request
+  -> protocol decode
+  -> server router
+  -> room manager
+  -> core room command
+  -> domain events
+  -> broadcast events and authoritative snapshots
+```
+
+Socket handlers never mutate room internals directly. They translate client requests into core commands, apply those commands through the room state machine, then broadcast events and snapshots.
+
+The server keeps orchestration in `room_manager`, with focused helpers for `fanout`, `expiry`, `room_registry`, `session_registry`, `membership`, `room_lifecycle`, `scheduler`, `router`, `session`, and `websocket_session`.
+
+## Match And Room Rules
+
+Rooms move through:
+
+```text
+Lobby -> InRound -> Lobby -> ... -> Finished -> Lobby
+```
+
+Default rooms are Best of 3, represented as `target_score = 2`, meaning the first participant to two round wins takes the match. Supported competitive rooms are exactly two active participants because the RPS/RPSLS resolver compares one participant against one opponent.
+
+Participants can join, leave, ready, unready, submit moves, and appear in the scoreboard. Spectators can watch room state but cannot submit moves and do not appear in competitive scores.
+
+After each round resolves, participants return to not-ready so the next round requires an explicit ready check. A finished room keeps its final scoreboard and winner until the host sends `start_next_match`, which resets scores, ready state, moves, and round number without changing seats or spectators.
+
+Room names are unique server-wide, case-insensitively. Display names are unique inside a room while a member is present, including disconnected members inside their expiry windows. Duplicate room/name errors include structured suggestions when alternatives are available.
+
+When the host leaves or forfeits, host ownership transfers to another remaining player, preferring connected participants. When the last player leaves, the room is removed from the server registry.
+
+## Disconnect And Reconnect
+
+The server owns player sessions and reconnect tokens. A reconnect token restores the same player identity, allowing the user to return to the same room, score, role, and connected state while the server still retains that session.
+
+Welcome responses expose reconnect outcome metadata:
+
+- `reconnected`: a supplied token matched an existing identity
+- `stale_token_replaced`: a supplied token was unknown and replaced with a fresh identity/token
+- `room_restored`: the restored identity still had room membership and received a room snapshot
+
+Disconnected participants keep their participant seat for 30 seconds. Reconnecting during that window restores them as active participants. After 30 seconds, the server demotes them to disconnected spectators and frees the participant slot. Disconnected spectators keep their room-scoped display name for 60 seconds. If they do not reconnect during that window, the server removes them from the room and frees the display name.
+
+If an active participant leaves or disconnects after a match has started, the match ends by forfeit so the opponent is not trapped in a dead match. The grace periods protect identity and room clarity; they do not keep an abandoned match alive.
+
+Each active socket has a server-side connection generation. If an older transport loop closes after a same-token reconnect, its stale disconnect is ignored so it cannot mark the restored socket offline. Each active socket also has a bounded outbound queue; if it fills or closes, the server drops that socket and normal reconnect handling can restore the player later.
+
 ## Protocol
 
 The same JSON envelope is available through two transports:
@@ -170,20 +224,32 @@ The same JSON envelope is available through two transports:
 - TCP clients send newline-delimited JSON.
 - Browser clients send JSON in WebSocket text frames.
 
-Each client request includes a numeric `request_id`; server messages are responses, room events, or room snapshots. Welcome responses explicitly report whether reconnect restored an identity, replaced a stale token, and restored room membership. Clients should treat snapshots as authoritative. The browser protocol constants in `web/src/lib/protocol/generated.ts`, structural types in `web/src/lib/protocol/generated-types.ts`, and JSON Schema in `web/src/lib/protocol/schema.ts` are generated from the Rust protocol crate. Browser WebSocket messages are validated with AJV before they reach application state.
+Each client request carries a numeric `request_id`; responses echo that ID. Room updates are sent as room events and authoritative snapshots. Events explain what happened, while snapshots are the rendered source of truth.
 
-See [docs/protocol.md](docs/protocol.md) for message examples and reconnect behavior.
+Move privacy is intentional: `move_accepted` identifies the player but does not reveal the selected move. Submitted moves are only exposed in the round result.
 
-## Architecture Notes
+Rust protocol and core DTOs generate browser protocol artifacts:
 
-`play-room-core` has no sockets, async runtime, filesystem access, or protocol encoding. It accepts room commands and returns domain events. The server converts client requests into core commands, applies them through the state machine, and broadcasts events plus snapshots to connected clients.
+```text
+web/src/lib/protocol/generated.ts
+web/src/lib/protocol/generated-types.ts
+web/src/lib/protocol/schema.ts
+```
 
-More detail:
+Regenerate them with:
 
-- [docs/architecture.md](docs/architecture.md)
-- [docs/protocol.md](docs/protocol.md)
-- [docs/state-machine.md](docs/state-machine.md)
-- [docs/testing.md](docs/testing.md)
+```bash
+cargo run -p play-room-protocol --bin generate-web-protocol
+```
+
+or:
+
+```bash
+cd web
+npm run generate:protocol
+```
+
+Rust tests check that the committed generated constants, structural TypeScript types, and JSON Schema match Rust output. The browser validates incoming WebSocket frames with AJV before applying them to client state.
 
 ## Quality Checks
 
@@ -195,7 +261,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-For the web client, run:
+For the browser client:
 
 ```bash
 cd web
@@ -205,7 +271,9 @@ npm run check
 npm run build
 ```
 
-The integration suite covers protocol round-trips, generated web protocol constant/type/schema drift, welcome reconnect metadata, two-player matches, spectator restrictions, reconnect flow, stale reconnect-token handling, stale socket-disconnect protection, timeout resolution, move privacy, disconnect expiry behavior, and every JSON fixture in `examples/scripted_clients/`. The web test suite covers runtime server-message decoding for malformed JSON, unknown message kinds, unsupported protocol versions, invalid room rules, and valid welcome/snapshot messages.
+The Rust suite covers protocol round-trips, generated protocol drift, reconnect metadata, two-player matches, spectator restrictions, reconnect flow, stale socket-disconnect protection, timeout resolution, move privacy, disconnect expiry behavior, room/client limits, bounded queues, host transfer, empty-room cleanup, and every JSON fixture in `examples/scripted_clients/`.
+
+The web suite covers runtime server-message decoding for malformed JSON, unknown message kinds, unsupported protocol versions, invalid room rules, and valid welcome/snapshot messages.
 
 ## Repository Notes
 
