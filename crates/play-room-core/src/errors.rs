@@ -19,6 +19,9 @@ pub enum CoreError {
     #[error("match is not finished")]
     MatchNotFinished,
 
+    #[error("match is already in progress")]
+    MatchInProgress,
+
     #[error("only the room host can perform this action")]
     HostOnly,
 

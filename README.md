@@ -15,7 +15,7 @@ The browser client is the primary user-facing experience. The terminal client re
 - Reconnect tokens with explicit restored-room/stale-token metadata and stale socket-disconnect protection
 - Enforced room/client limits with abandoned session cleanup
 - Bounded outbound queues so stalled clients are dropped instead of growing memory
-- 90-second participant seat protection after disconnect, followed by spectator demotion and timed name cleanup
+- 30-second participant seat protection after disconnect, followed by 60-second spectator name cleanup
 - RPS and RPSLS move support
 - Unique room names, room-scoped display-name checks, and structured conflict errors
 - Rust-generated web protocol constants, structural TypeScript types, and JSON Schema for browser validation
@@ -143,7 +143,7 @@ Then submit moves from each client:
 /move scissors
 ```
 
-The server broadcasts room events and authoritative snapshots as the match progresses. Outbound queues are bounded; a client that stops consuming server messages is dropped and can reconnect with its token. Competitive rooms are intentionally two-player, and rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and match notifications remain clear. Disconnected participants keep their seat for 90 seconds; after that they become disconnected spectators for another 90-second name-reservation window. If they still do not reconnect, the server removes them from the room and frees the display name. Move submissions are acknowledged without revealing the selected move until the round resolves.
+The server broadcasts room events and authoritative snapshots as the match progresses. Outbound queues are bounded; a client that stops consuming server messages is dropped and can reconnect with its token. Competitive rooms are intentionally two-player, and rooms default to Best of 3. Room names are unique server-wide and display names are unique inside a room so reconnects, scores, and match notifications remain clear. Disconnected participants keep their seat for 30 seconds; after that they become disconnected spectators for a 60-second name-reservation window. If they still do not reconnect, the server removes them from the room and frees the display name. Move submissions are acknowledged without revealing the selected move until the round resolves.
 
 ## Client Commands
 

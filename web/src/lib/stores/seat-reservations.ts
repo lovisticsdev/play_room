@@ -1,8 +1,8 @@
 import { writable } from 'svelte/store';
 import type { PlayerId, RoomSnapshot } from '../protocol/types';
 
-export const PARTICIPANT_SEAT_GRACE_MS = 90000;
-export const SPECTATOR_NAME_GRACE_MS = 90000;
+export const PARTICIPANT_SEAT_GRACE_MS = 30000;
+export const SPECTATOR_NAME_GRACE_MS = 60000;
 
 export interface SeatReservationsState {
   participantExpiresAt: Record<PlayerId, number>;

@@ -11,8 +11,8 @@ The test strategy focuses on invariants across the deterministic core, protocol 
 - Spectators cannot submit moves.
 - Spectators are excluded from the competitive scoreboard.
 - Disconnected participants remain visible when their session and score still matter.
-- Disconnected participant seats are reserved for 90 seconds, then expire into disconnected spectators.
-- Disconnected spectators reserve their display name for 90 seconds, then leave the room automatically so the name can be reused.
+- Disconnected participant seats are reserved for 30 seconds, then expire into disconnected spectators.
+- Disconnected spectators reserve their display name for 60 seconds, then leave the room automatically so the name can be reused.
 - Duplicate display names are rejected within a room, including spectators and disconnected players still inside their expiry windows.
 - A ready room starts a round exactly once.
 - Timeouts resolve active rounds and reject stale timeout commands.

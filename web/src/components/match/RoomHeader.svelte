@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RoomSnapshot } from '../../lib/protocol/types';
-  import { bestOfLabel, gameLabel, phaseLabel } from '../../lib/protocol/rules';
+  import { bestOfLabel, gameLabel, phaseLabel, roundProgressLabel } from '../../lib/protocol/rules';
   import Badge from '../ui/Badge.svelte';
   import RoundTimer from './RoundTimer.svelte';
   import { playerName, roundCountdownDeadline } from '../../lib/view/room-selectors';
@@ -27,6 +27,7 @@
     : finished
       ? `${winnerName} won. The host can start the next match.`
       : 'Ready participants start the next round.';
+  $: roundProgress = roundProgressLabel(room.round, room.phase, room.rules.target_score);
 </script>
 
 <header class="room-header">
@@ -37,7 +38,7 @@
 
   <div class="room-round-block">
     <Badge tone={inRound ? 'accent' : finished ? 'success' : 'neutral'}>{phaseLabel(room.phase)}</Badge>
-    <small>{bestOfLabel(room.rules.target_score)} · {gameLabel(room.rules.game)}</small>
+    <small>{roundProgress} · {bestOfLabel(room.rules.target_score)} · {gameLabel(room.rules.game)}</small>
   </div>
 
   <div class="room-state-block">

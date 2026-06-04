@@ -11,7 +11,9 @@
   $: roundTitle = !result
     ? ''
     : roundWinner
-      ? `${playerName(room, roundWinner)} wins round ${result.round}`
+      ? result.reason === 'player_left'
+        ? `${playerName(room, roundWinner)} wins by forfeit`
+        : `${playerName(room, roundWinner)} wins round ${result.round}`
       : result.outcome === 'draw'
         ? `Round ${result.round} is a draw`
         : `Round ${result.round} had no contest`;

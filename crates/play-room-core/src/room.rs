@@ -119,6 +119,9 @@ impl GameRoom {
         if player.role == PlayerRole::Spectator && !self.rules.allow_spectators {
             return Err(CoreError::SpectatorsNotAllowed);
         }
+        if player.role == PlayerRole::Participant && self.match_in_progress() {
+            return Err(CoreError::MatchInProgress);
+        }
         if player.role == PlayerRole::Participant
             && self.participant_count() >= self.rules.max_players
         {
@@ -135,6 +138,13 @@ impl GameRoom {
     }
 
     fn leave(&mut self, player_id: &PlayerId) -> Result<Vec<RoomEvent>, CoreError> {
+        let was_participant = self
+            .players
+            .get(player_id)
+            .map(|player| player.role == PlayerRole::Participant)
+            .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
+        let match_in_progress = self.match_in_progress();
+
         self.players
             .remove(player_id)
             .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
@@ -142,11 +152,14 @@ impl GameRoom {
         let mut events = vec![RoomEvent::PlayerLeft {
             player_id: player_id.clone(),
         }];
-        if self.host_id.as_ref() == Some(player_id) {
-            self.host_id = self.next_host_id();
-            events.push(RoomEvent::HostChanged {
-                host_id: self.host_id.clone(),
-            });
+        self.transfer_host_if_current(player_id, &mut events);
+        if was_participant && match_in_progress {
+            if matches!(self.phase, RoomPhase::InRound { .. }) {
+                events.extend(self.resolve_round(RoundEndReason::PlayerLeft)?);
+            } else {
+                events.extend(self.finish_match_by_forfeit());
+            }
+            return Ok(events);
         }
         if matches!(self.phase, RoomPhase::InRound { .. })
             && self.active_participant_ids().len() < self.rules.min_players
@@ -227,6 +240,9 @@ impl GameRoom {
         if matches!(self.phase, RoomPhase::InRound { .. }) {
             return Err(CoreError::RoundAlreadyActive);
         }
+        if self.match_in_progress() {
+            return Err(CoreError::MatchInProgress);
+        }
         let participants = self.participant_count();
         let player = self
             .players
@@ -288,6 +304,13 @@ impl GameRoom {
     }
 
     fn disconnect(&mut self, player_id: &PlayerId) -> Result<Vec<RoomEvent>, CoreError> {
+        let was_participant = self
+            .players
+            .get(player_id)
+            .map(|player| player.role == PlayerRole::Participant)
+            .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
+        let match_in_progress = self.match_in_progress();
+
         let player = self
             .players
             .get_mut(player_id)
@@ -297,6 +320,15 @@ impl GameRoom {
         let mut events = vec![RoomEvent::PlayerDisconnected {
             player_id: player_id.clone(),
         }];
+        if was_participant && match_in_progress {
+            self.transfer_host_if_current(player_id, &mut events);
+            if matches!(self.phase, RoomPhase::InRound { .. }) {
+                events.extend(self.resolve_round(RoundEndReason::PlayerLeft)?);
+            } else {
+                events.extend(self.finish_match_by_forfeit());
+            }
+            return Ok(events);
+        }
         if matches!(self.phase, RoomPhase::InRound { .. })
             && self.active_participant_ids().len() < self.rules.min_players
         {
@@ -418,11 +450,16 @@ impl GameRoom {
         let mut events = vec![RoomEvent::RoundResolved { result }];
         self.moves.clear();
 
-        let winner = self
-            .players
-            .values()
-            .find(|p| p.score >= self.rules.target_score)
-            .map(|p| p.id.clone());
+        let forfeit_winner = match (&outcome, reason) {
+            (RoundOutcome::Win { winner }, RoundEndReason::PlayerLeft) => Some(winner.clone()),
+            _ => None,
+        };
+        let winner = forfeit_winner.or_else(|| {
+            self.players
+                .values()
+                .find(|p| p.score >= self.rules.target_score)
+                .map(|p| p.id.clone())
+        });
         for player in self.players.values_mut() {
             player.ready = false;
         }
@@ -443,6 +480,11 @@ impl GameRoom {
         reason: RoundEndReason,
     ) -> Result<RoundOutcome, CoreError> {
         if active.len() != 2 {
+            if reason == RoundEndReason::PlayerLeft && active.len() == 1 {
+                return Ok(RoundOutcome::Win {
+                    winner: active[0].clone(),
+                });
+            }
             return Ok(RoundOutcome::NoContest);
         }
         let left = &active[0];
@@ -506,11 +548,48 @@ impl GameRoom {
             .map(|player| player.id.clone())
     }
 
+    fn transfer_host_if_current(&mut self, player_id: &PlayerId, events: &mut Vec<RoomEvent>) {
+        if self.host_id.as_ref() == Some(player_id) {
+            self.host_id = self.next_host_id();
+            events.push(RoomEvent::HostChanged {
+                host_id: self.host_id.clone(),
+            });
+        }
+    }
+
     fn participant_count(&self) -> usize {
         self.players
             .values()
             .filter(|p| p.role == PlayerRole::Participant)
             .count()
+    }
+
+    fn match_in_progress(&self) -> bool {
+        self.round > 0 && !matches!(self.phase, RoomPhase::Finished { .. })
+    }
+
+    fn finish_match_by_forfeit(&mut self) -> Vec<RoomEvent> {
+        let winner = self.forfeit_winner_id();
+        self.moves.clear();
+        for player in self.players.values_mut() {
+            player.ready = false;
+        }
+        self.phase = RoomPhase::Finished {
+            winner: winner.clone(),
+        };
+        vec![RoomEvent::GameEnded { winner }]
+    }
+
+    fn forfeit_winner_id(&self) -> Option<PlayerId> {
+        self.players
+            .values()
+            .find(|player| player.role == PlayerRole::Participant && player.connected)
+            .or_else(|| {
+                self.players
+                    .values()
+                    .find(|player| player.role == PlayerRole::Participant)
+            })
+            .map(|player| player.id.clone())
     }
 
     pub fn scoreboard(&self) -> Vec<PlayerScore> {
@@ -831,6 +910,191 @@ mod tests {
             } if player_id == &PlayerId::new("alice")
         ));
         assert_eq!(room.snapshot().scoreboard[0].score, 2);
+    }
+
+    #[test]
+    fn role_switching_is_rejected_between_unfinished_rounds() {
+        let mut room = two_player_room();
+        room.apply(RoomCommand::Join {
+            player: Player::spectator(PlayerId::new("mira"), "Mira"),
+        })
+        .unwrap();
+        alice_wins_round(&mut room, 1000);
+
+        let participant_err = room
+            .apply(RoomCommand::SetSpectator {
+                player_id: PlayerId::new("alice"),
+                spectator: true,
+            })
+            .unwrap_err();
+        let spectator_err = room
+            .apply(RoomCommand::SetSpectator {
+                player_id: PlayerId::new("mira"),
+                spectator: false,
+            })
+            .unwrap_err();
+
+        assert_eq!(participant_err, CoreError::MatchInProgress);
+        assert_eq!(spectator_err, CoreError::MatchInProgress);
+    }
+
+    #[test]
+    fn participant_join_is_rejected_between_unfinished_rounds() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1000);
+
+        let err = room
+            .apply(RoomCommand::Join {
+                player: Player::participant(PlayerId::new("carol"), "Carol"),
+            })
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::MatchInProgress);
+    }
+
+    #[test]
+    fn participant_leave_between_rounds_finishes_match_by_forfeit() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1000);
+
+        let events = room
+            .apply(RoomCommand::Leave {
+                player_id: PlayerId::new("bob"),
+            })
+            .unwrap();
+
+        assert!(matches!(
+            room.phase(),
+            RoomPhase::Finished {
+                winner: Some(player_id)
+            } if player_id == &PlayerId::new("alice")
+        ));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::PlayerLeft { player_id } if player_id == &PlayerId::new("bob")
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::GameEnded { winner } if winner == &Some(PlayerId::new("alice"))
+        )));
+        assert_eq!(
+            room.snapshot().scoreboard[0].player_id,
+            PlayerId::new("alice")
+        );
+    }
+
+    #[test]
+    fn participant_disconnect_during_round_finishes_match_by_forfeit() {
+        let mut room = two_player_room();
+        ready(&mut room, "alice", 1000);
+        ready(&mut room, "bob", 1000);
+
+        let events = room
+            .apply(RoomCommand::Disconnect {
+                player_id: PlayerId::new("bob"),
+            })
+            .unwrap();
+
+        assert!(matches!(
+            room.phase(),
+            RoomPhase::Finished {
+                winner: Some(player_id)
+            } if player_id == &PlayerId::new("alice")
+        ));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::RoundResolved { result }
+                if result.reason == RoundEndReason::PlayerLeft
+                    && matches!(&result.outcome, RoundOutcome::Win { winner } if winner == &PlayerId::new("alice"))
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::GameEnded { winner } if winner == &Some(PlayerId::new("alice"))
+        )));
+        assert_eq!(room.snapshot().scoreboard[0].score, 1);
+    }
+
+    #[test]
+    fn host_disconnect_during_round_transfers_host_and_forfeits_match() {
+        let mut room = two_player_room();
+        ready(&mut room, "alice", 1000);
+        ready(&mut room, "bob", 1000);
+
+        let events = room
+            .apply(RoomCommand::Disconnect {
+                player_id: PlayerId::new("alice"),
+            })
+            .unwrap();
+        let snapshot = room.snapshot();
+
+        assert!(matches!(
+            room.phase(),
+            RoomPhase::Finished {
+                winner: Some(player_id)
+            } if player_id == &PlayerId::new("bob")
+        ));
+        assert_eq!(snapshot.host_id, Some(PlayerId::new("bob")));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::HostChanged { host_id } if host_id == &Some(PlayerId::new("bob"))
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::RoundResolved { result }
+                if result.reason == RoundEndReason::PlayerLeft
+                    && matches!(&result.outcome, RoundOutcome::Win { winner } if winner == &PlayerId::new("bob"))
+        )));
+        assert!(snapshot
+            .scoreboard
+            .iter()
+            .any(|score| score.player_id == PlayerId::new("bob") && score.score == 1));
+    }
+
+    #[test]
+    fn host_disconnect_between_rounds_transfers_host_and_forfeits_match() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1000);
+
+        let events = room
+            .apply(RoomCommand::Disconnect {
+                player_id: PlayerId::new("alice"),
+            })
+            .unwrap();
+        let snapshot = room.snapshot();
+
+        assert!(matches!(
+            room.phase(),
+            RoomPhase::Finished {
+                winner: Some(player_id)
+            } if player_id == &PlayerId::new("bob")
+        ));
+        assert_eq!(snapshot.host_id, Some(PlayerId::new("bob")));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::HostChanged { host_id } if host_id == &Some(PlayerId::new("bob"))
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::GameEnded { winner } if winner == &Some(PlayerId::new("bob"))
+        )));
+    }
+
+    #[test]
+    fn spectator_join_is_allowed_during_unfinished_match() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1000);
+
+        let events = room
+            .apply(RoomCommand::Join {
+                player: Player::spectator(PlayerId::new("mira"), "Mira"),
+            })
+            .unwrap();
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::PlayerJoined { player_id, role, .. }
+                if player_id == &PlayerId::new("mira") && role == &PlayerRole::Spectator
+        )));
     }
 
     #[test]

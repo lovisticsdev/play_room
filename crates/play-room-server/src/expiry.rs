@@ -1,8 +1,8 @@
 use play_room_core::{GameRoom, PlayerId, PlayerRole, RoomId, RoomSnapshot};
 use std::collections::BTreeMap;
 
-pub const PARTICIPANT_SEAT_GRACE_MS: u64 = 90_000;
-pub const SPECTATOR_NAME_GRACE_MS: u64 = 90_000;
+pub const PARTICIPANT_SEAT_GRACE_MS: u64 = 30_000;
+pub const SPECTATOR_NAME_GRACE_MS: u64 = 60_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SeatExpiry {

@@ -83,6 +83,24 @@ fn duplicate_disconnected_player_name_is_rejected_with_clear_message() {
 
     assert_eq!(err.code(), Some(&ErrorCode::PlayerNameExists));
     assert!(err.message().contains("currently disconnected"));
+    assert_eq!(err.suggestions(), ["Alice-2", "Alice-3", "Alice-4"]);
+}
+
+#[test]
+fn duplicate_connected_player_name_is_rejected_with_suggestions() {
+    let mut manager = RoomManager::default();
+    let alice = connect_named(&mut manager, "Alice");
+    let other_alice = connect_named(&mut manager, "alice");
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "testroom".to_owned(), None)
+        .unwrap();
+
+    let err = manager
+        .join_room(&other_alice.player_id, &room_id)
+        .unwrap_err();
+
+    assert_eq!(err.code(), Some(&ErrorCode::PlayerNameExists));
+    assert_eq!(err.suggestions(), ["Alice-2", "Alice-3", "Alice-4"]);
 }
 
 fn has_room_event(
@@ -292,6 +310,10 @@ fn spectator_names_are_checked_against_all_room_members() {
         participant_conflict.code(),
         Some(&ErrorCode::PlayerNameExists)
     );
+    assert_eq!(
+        participant_conflict.suggestions(),
+        ["Alice-2", "Alice-3", "Alice-4"]
+    );
 
     manager.spectate_room(&mira.player_id, &room_id).unwrap();
     let mira_clone = connect_named(&mut manager, "mira");
@@ -302,6 +324,10 @@ fn spectator_names_are_checked_against_all_room_members() {
     assert_eq!(
         spectator_conflict.code(),
         Some(&ErrorCode::PlayerNameExists)
+    );
+    assert_eq!(
+        spectator_conflict.suggestions(),
+        ["Mira-2", "Mira-3", "Mira-4"]
     );
 }
 
@@ -320,9 +346,9 @@ fn disconnected_spectator_gets_name_expiry_in_snapshot() {
     let snapshot = manager.room_snapshot(&room_id).unwrap();
 
     assert!(outcome.seat_expiry.is_none());
-    assert_eq!(expiry.expires_at_ms, 95_000);
+    assert_eq!(expiry.expires_at_ms, 65_000);
     assert!(snapshot.players.iter().any(|player| {
-        player.id == mira.player_id && player.spectator_expires_at_ms == Some(95_000)
+        player.id == mira.player_id && player.spectator_expires_at_ms == Some(65_000)
     }));
 }
 
@@ -345,6 +371,7 @@ fn spectator_name_expiry_removes_disconnected_spectator_and_frees_name() {
         .spectate_room(&other_mira.player_id, &room_id)
         .unwrap_err();
     assert_eq!(err.code(), Some(&ErrorCode::PlayerNameExists));
+    assert_eq!(err.suggestions(), ["Mira-2", "Mira-3", "Mira-4"]);
 
     let messages = manager.expire_spectator(&expiry).unwrap();
     let join_messages = manager
@@ -404,7 +431,7 @@ fn disconnected_participant_keeps_seat_until_expiry() {
             .seat_expiry
             .as_ref()
             .map(|expiry| expiry.expires_at_ms),
-        Some(91_000)
+        Some(31_000)
     );
     assert!(room_has_player(&manager, &room_id, &alice.player_id));
 }
@@ -505,13 +532,14 @@ fn seat_expiry_keeps_display_name_reserved_until_spectator_expiry() {
         .unwrap_err();
     assert_eq!(err.code(), Some(&ErrorCode::PlayerNameExists));
     assert!(err.message().contains("currently disconnected"));
+    assert_eq!(err.suggestions(), ["Alice-2", "Alice-3", "Alice-4"]);
 
     manager.expire_spectator(&spectator_expiry).unwrap();
     let messages = manager
         .spectate_room(&other_alice.player_id, &room_id)
         .unwrap();
 
-    assert_eq!(spectator_expiry.expires_at_ms, 181_000);
+    assert_eq!(spectator_expiry.expires_at_ms, 91_000);
     assert!(!room_has_player(&manager, &room_id, &alice.player_id));
     assert!(!messages.is_empty());
 }

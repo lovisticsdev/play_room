@@ -1,14 +1,19 @@
-import type { PlayerId, PlayerRole, RoomEvent, RoomSnapshot, RoundOutcome } from '../protocol/types';
+import type { PlayerId, PlayerRole, RoomEvent, RoomSnapshot, RoundResult } from '../protocol/types';
 
 function nameForPlayer(room: RoomSnapshot | null, playerId: PlayerId | null): string {
   if (!playerId) return 'No one';
   return room?.players.find((player) => player.id === playerId)?.name ?? playerId;
 }
 
-function outcomeText(room: RoomSnapshot | null, outcome: RoundOutcome): string {
+function outcomeText(room: RoomSnapshot | null, result: RoundResult): string {
+  const { outcome } = result;
   if (outcome === 'draw') return 'Round resolved as a draw';
   if (outcome === 'no_contest') return 'Round resolved with no contest';
-  if ('win' in outcome) return `${nameForPlayer(room, outcome.win.winner)} wins the round`;
+  if ('win' in outcome) {
+    return result.reason === 'player_left'
+      ? `${nameForPlayer(room, outcome.win.winner)} wins by forfeit`
+      : `${nameForPlayer(room, outcome.win.winner)} wins the round`;
+  }
   return `${nameForPlayer(room, outcome.timeout_win.winner)} wins by timeout`;
 }
 
@@ -22,8 +27,11 @@ export function formatRoomEvent(event: RoomEvent, room: RoomSnapshot | null): st
       return `${event.name} joined as ${roleText(event.role)}`;
     case 'player_left':
       return `${nameForPlayer(room, event.player_id)} left the room`;
-    case 'player_disconnected':
-      return `${nameForPlayer(room, event.player_id)} disconnected; participant seat reserved for 90s`;
+    case 'player_disconnected': {
+      const previous = room?.players.find((player) => player.id === event.player_id);
+      const grace = previous?.role === 'spectator' ? 'name reserved for 60s' : 'participant seat reserved for 30s';
+      return `${nameForPlayer(room, event.player_id)} disconnected; ${grace}`;
+    }
     case 'player_reconnected':
       return `${nameForPlayer(room, event.player_id)} reconnected`;
     case 'ready_changed':
@@ -40,7 +48,7 @@ export function formatRoomEvent(event: RoomEvent, room: RoomSnapshot | null): st
     case 'move_accepted':
       return `${nameForPlayer(room, event.player_id)} locked a move`;
     case 'round_resolved':
-      return outcomeText(room, event.result.outcome);
+      return outcomeText(room, event.result);
     case 'game_ended':
       return event.winner ? `${nameForPlayer(room, event.winner)} won the match` : 'Match ended';
     case 'match_reset':

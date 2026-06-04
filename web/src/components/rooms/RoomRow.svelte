@@ -10,6 +10,7 @@
   let busy = false;
   let error: string | null = null;
   let warning = false;
+  let suggestions: string[] = [];
 
   $: actionLabel = action === 'current' ? 'Current' : action === 'join' ? 'Join' : 'Watch';
 
@@ -19,16 +20,20 @@
     busy = true;
     error = null;
     warning = false;
+    suggestions = [];
 
     try {
       if (action === 'join') {
-        await playRoomClient.joinRoom(room.id);
+        await playRoomClient.joinOrSpectateRoom(room.id);
         return;
       }
       await playRoomClient.spectateRoom(room.id);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Room action failed';
-      warning = isPlayRoomRequestError(err) && err.code === 'player_name_exists';
+      if (isPlayRoomRequestError(err)) {
+        warning = err.code === 'player_name_exists';
+        suggestions = err.suggestions;
+      }
     } finally {
       busy = false;
     }
@@ -52,6 +57,16 @@
   </div>
 
   {#if error}
-    <div class={warning ? 'form-warning room-row-message' : 'form-error room-row-message'}>{error}</div>
+    <div class={warning ? 'form-warning room-row-message' : 'form-error room-row-message'}>
+      {error}
+      {#if suggestions.length > 0}
+        <span class="room-row-suggestions">
+          Try a different display name:
+          {#each suggestions as suggestion, index}
+            <span class="suggestion-pill">{suggestion}</span>{index < suggestions.length - 1 ? ',' : '.'}
+          {/each}
+        </span>
+      {/if}
+    </div>
   {/if}
 </div>

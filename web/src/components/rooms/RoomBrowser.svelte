@@ -10,6 +10,7 @@
   let query = '';
   let error: string | null = null;
   let suggestions: string[] = [];
+  let suggestionKind: 'room' | 'player' = 'room';
 
   $: currentRoomId = $currentRoomStore.room?.id ?? null;
   $: needle = query.trim().toLowerCase();
@@ -21,15 +22,19 @@
     event.preventDefault();
     error = null;
     suggestions = [];
+    suggestionKind = 'room';
 
     const code = query.trim();
     if (!code) return;
 
     try {
-      await playRoomClient.joinRoom(code);
+      await playRoomClient.joinOrSpectateRoom(code);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Join failed';
-      suggestions = isPlayRoomRequestError(err) ? err.suggestions : [];
+      if (isPlayRoomRequestError(err)) {
+        suggestions = err.suggestions;
+        suggestionKind = err.code === 'player_name_exists' ? 'player' : 'room';
+      }
     }
   }
 </script>
@@ -53,10 +58,17 @@
 
   {#if suggestions.length > 0}
     <div class="form-warning">
-      Try
-      {#each suggestions as suggestion, index}
-        <button type="button" onclick={() => (query = suggestion)}>{suggestion}</button>{index < suggestions.length - 1 ? ',' : '.'}
-      {/each}
+      {#if suggestionKind === 'player'}
+        Try a different display name:
+        {#each suggestions as suggestion, index}
+          <span class="suggestion-pill">{suggestion}</span>{index < suggestions.length - 1 ? ',' : '.'}
+        {/each}
+      {:else}
+        Try
+        {#each suggestions as suggestion, index}
+          <button type="button" onclick={() => (query = suggestion)}>{suggestion}</button>{index < suggestions.length - 1 ? ',' : '.'}
+        {/each}
+      {/if}
     </div>
   {/if}
 

@@ -27,6 +27,17 @@ export function bestOfLabel(targetScore: number): string {
   return `Best of ${bestOfForTargetScore(targetScore)}`;
 }
 
+export function roundProgressLabel(round: number, phase: RoomPhase, targetScore: number): string {
+  const maxRounds = bestOfForTargetScore(targetScore);
+  const currentRound = phase.phase === 'lobby'
+    ? Math.min(round + 1, maxRounds)
+    : phase.phase === 'in_round'
+      ? phase.round
+      : round;
+
+  return `Round ${Math.max(1, currentRound)}/${maxRounds}`;
+}
+
 export function gameLabel(game: GameKind): string {
   return game === 'rock_paper_scissors' ? 'RPS' : 'RPSLS';
 }

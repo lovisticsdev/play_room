@@ -184,6 +184,20 @@ class PlayRoomClient {
     uiStore.closeRoomsModal();
   }
 
+  async joinOrSpectateRoom(roomId: string): Promise<void> {
+    try {
+      await this.joinRoom(roomId);
+    } catch (error) {
+      if (error instanceof PlayRoomRequestError && error.code === 'room_full') {
+        eventLogStore.push('warning', 'Room is full; watching as spectator instead');
+        await this.spectateRoom(roomId);
+        return;
+      }
+
+      throw error;
+    }
+  }
+
   async spectateRoom(roomId: string): Promise<void> {
     await this.sendAndApply(spectateRoomRequest(roomId));
     await this.refreshRooms();

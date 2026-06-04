@@ -39,9 +39,9 @@ After each round resolution, participants return to not-ready so the next round 
 
 ## Roles And Visibility
 
-Participants are competitive players and appear in the scoreboard. Disconnected participants remain visible because their score and reconnect session still matter. The server reserves a disconnected participant seat for 90 seconds; if the player does not reconnect in time, they become a disconnected spectator and the participant slot opens.
+Participants are competitive players and appear in the scoreboard. Disconnected participants remain visible because their score and reconnect session still matter. The server reserves a disconnected participant seat for 30 seconds; if the player does not reconnect in time, they become a disconnected spectator and the participant slot opens.
 
-Spectators are non-competitive viewers. They are grouped separately from participants in the UI and excluded from score totals. Disconnected spectators reserve their room-scoped display name for 90 seconds; if they do not reconnect during that window, the server removes them from the room and frees the name.
+Spectators are non-competitive viewers. They are grouped separately from participants in the UI and excluded from score totals. Disconnected spectators reserve their room-scoped display name for 60 seconds; if they do not reconnect during that window, the server removes them from the room and frees the name.
 
 ## Host And Room Lifetime
 

@@ -10,8 +10,11 @@
   import MoveSelector from './MoveSelector.svelte';
   import ResultBanner from './ResultBanner.svelte';
   import RoomHeader from './RoomHeader.svelte';
+  import Button from '../ui/Button.svelte';
 
   let submitError: string | null = null;
+  let actionError: string | null = null;
+  let actionBusy = false;
 
   $: room = $currentRoomStore.room;
   $: me = localPlayer(room, $sessionStore.playerId);
@@ -25,6 +28,10 @@
   $: activeRoundNumber = room?.phase.phase === 'in_round' ? room.phase.round : null;
   $: finished = room ? isFinished(room.phase) : false;
   $: matchWinner = matchWinnerId(room);
+  $: isHost = Boolean(room?.host_id && room.host_id === $sessionStore.playerId);
+  $: matchStarted = Boolean(room && room.round > 0);
+  $: roleSwitchLocked = matchStarted && !finished;
+  $: seatOpen = Boolean(room && participantList.length < room.rules.max_players);
   $: canSubmit = Boolean(me?.role === 'participant' && me.connected && activeRound && !$currentRoomStore.localMove);
   $: lockedMove = $currentRoomStore.localMove;
 
@@ -57,6 +64,19 @@
       submitError = error instanceof Error ? error.message : 'Move rejected';
     }
   }
+
+  async function runMatchAction(action: () => Promise<void>) {
+    actionBusy = true;
+    actionError = null;
+
+    try {
+      await action();
+    } catch (error) {
+      actionError = error instanceof Error ? error.message : 'Action failed';
+    } finally {
+      actionBusy = false;
+    }
+  }
 </script>
 
 <section class="match-surface" class:idle={!room}>
@@ -74,6 +94,10 @@
               {#if leftPlayer?.id === room.host_id}<Badge tone="warning">Host</Badge>{/if}
             </div>
             <Badge tone={roleTone(leftPlayer)}>{roleLabel(leftPlayer)}</Badge>
+          </div>
+          <div class="duel-score">
+            <span>Score</span>
+            <strong>{leftPlayer?.score ?? 0}</strong>
           </div>
         </div>
       </div>
@@ -109,7 +133,65 @@
             </div>
             <Badge tone={roleTone(rightPlayer)}>{roleLabel(rightPlayer)}</Badge>
           </div>
+          <div class="duel-score">
+            <span>Score</span>
+            <strong>{rightPlayer?.score ?? 0}</strong>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <div class="match-action-strip">
+      <div class="match-action-copy">
+        {#if finished}
+          <strong>{matchWinner ? 'Match complete' : 'Match ended'}</strong>
+          <span>{isHost ? 'Start a clean match when everyone is ready.' : 'Waiting for the host to start the next match.'}</span>
+        {:else if activeRound}
+          <strong>{spectatorMode ? 'Spectating live round' : lockedMove ? 'Move locked' : 'Your move'}</strong>
+          <span>{spectatorMode ? 'Moves stay hidden until the result lands.' : lockedMove ? 'Wait for the round to resolve.' : 'Pick one move before the timer expires.'}</span>
+        {:else if me?.role === 'participant'}
+          <strong>Ready check</strong>
+          <span>{roleSwitchLocked ? 'This match is underway; player seats stay locked until it ends.' : me.ready ? 'You are marked ready for the next round.' : 'Ready up from here when you want the next round to start.'}</span>
+        {:else if spectatorMode}
+          <strong>{roleSwitchLocked ? 'Match underway' : seatOpen ? 'Seat available' : 'Watching room'}</strong>
+          <span>{roleSwitchLocked ? 'Player seats are locked until the match ends.' : seatOpen ? 'Join as a player from the arena when you want to play.' : 'Both player seats are occupied.'}</span>
+        {:else}
+          <strong>Room controls</strong>
+          <span>Join the room from the browser to play or watch.</span>
+        {/if}
+      </div>
+
+      <div class="match-actions">
+        {#if finished && isHost}
+          <Button variant="success" disabled={actionBusy} onclick={() => runMatchAction(() => playRoomClient.startNextMatch())}>
+            Play Again
+          </Button>
+        {:else if !finished && !activeRound && me?.role === 'participant'}
+          <Button
+            variant={me.ready ? 'warning' : 'success'}
+            disabled={actionBusy || !me.connected}
+            onclick={() => runMatchAction(() => playRoomClient.setReady(!me?.ready))}
+          >
+            {me.ready ? 'Unready' : 'Ready'}
+          </Button>
+          {#if !roleSwitchLocked}
+            <Button variant="secondary" disabled={actionBusy} onclick={() => runMatchAction(() => playRoomClient.setSpectator(true))}>
+              Watch as Spectator
+            </Button>
+          {/if}
+        {:else if !finished && !activeRound && spectatorMode}
+          {#if roleSwitchLocked}
+            <Button variant="secondary" disabled>Match Locked</Button>
+          {:else}
+            <Button variant="primary" disabled={actionBusy || !seatOpen} onclick={() => runMatchAction(() => playRoomClient.setSpectator(false))}>
+              {seatOpen ? 'Join as Player' : 'Seats Full'}
+            </Button>
+          {/if}
+        {/if}
+
+        <Button variant="danger" disabled={actionBusy} onclick={() => runMatchAction(() => playRoomClient.leaveRoom())}>
+          Leave Room
+        </Button>
       </div>
     </div>
 
@@ -127,27 +209,10 @@
         </div>
         <span>You cannot change your move now.</span>
       </div>
-    {:else if spectatorMode}
-      <div class="locked-banner muted">
-        <div>
-          <strong>Spectator mode</strong>
-          <span>You are watching the two active participants. Use Join as Player when a seat is open.</span>
-        </div>
-      </div>
-    {:else if finished}
-      <div class="locked-banner muted">
-        <div>
-          <strong>Match locked</strong>
-          <span>The host can start the next match from the action panel.</span>
-        </div>
-      </div>
-    {:else if !activeRound}
-      <div class="locked-banner muted">
-        <div>
-          <strong>No active round</strong>
-          <span>Use the action panel to ready up for the next round.</span>
-        </div>
-      </div>
+    {/if}
+
+    {#if actionError}
+      <div class="form-error match-action-error">{actionError}</div>
     {/if}
 
     {#if submitError}

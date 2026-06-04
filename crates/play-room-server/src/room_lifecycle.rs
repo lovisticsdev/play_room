@@ -42,6 +42,31 @@ pub fn player_name_conflict(
     })
 }
 
+pub fn suggest_player_names(room: &GameRoom, desired: &str) -> Vec<String> {
+    let base = player_name_base(desired);
+    let mut suggestions = Vec::new();
+    let mut suffix = 2;
+
+    while suggestions.len() < 3 {
+        let candidate = format!("{base}-{suffix}");
+        if room.player_named(&candidate).is_none() {
+            suggestions.push(candidate);
+        }
+        suffix += 1;
+    }
+
+    suggestions
+}
+
+fn player_name_base(value: &str) -> String {
+    let base = value.trim();
+    if base.is_empty() {
+        "Player".to_owned()
+    } else {
+        base.to_owned()
+    }
+}
+
 pub fn round_timer(events: &[RoomEvent]) -> Option<RoundTimer> {
     events.iter().find_map(|event| {
         if let RoomEvent::RoundStarted { round, deadline_ms } = event {
@@ -94,6 +119,27 @@ mod tests {
         assert_eq!(conflict.name, "Alice");
         assert!(conflict.connected);
         assert!(player_name_conflict(&room, &host_id, "alice").is_none());
+    }
+
+    #[test]
+    fn suggests_available_player_names_within_room() {
+        let host_id = PlayerId::new("alice");
+        let (_room_id, mut room) = create_room(
+            &host_id,
+            "testroom",
+            GameRules::default(),
+            "Alice".to_owned(),
+        )
+        .unwrap();
+        room.apply(RoomCommand::Join {
+            player: Player::spectator(PlayerId::new("watcher"), "Alice-2"),
+        })
+        .unwrap();
+
+        assert_eq!(
+            suggest_player_names(&room, "Alice"),
+            vec!["Alice-3", "Alice-4", "Alice-5"]
+        );
     }
 
     #[test]

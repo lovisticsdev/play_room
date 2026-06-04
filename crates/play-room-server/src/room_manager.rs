@@ -113,7 +113,11 @@ impl RoomManagerError {
         )
     }
 
-    fn duplicate_player_name(name: impl Into<String>, connected: Option<bool>) -> Self {
+    fn duplicate_player_name(
+        name: impl Into<String>,
+        connected: Option<bool>,
+        suggestions: Vec<String>,
+    ) -> Self {
         let name = name.into();
         let message = match connected {
             Some(false) => format!(
@@ -122,14 +126,16 @@ impl RoomManagerError {
             Some(true) => format!("{name} is already in this room. Choose another name."),
             None => format!("player name already exists in this room: {name}"),
         };
-        Self::coded(message, ErrorCode::PlayerNameExists)
+        Self::with_suggestions(message, ErrorCode::PlayerNameExists, suggestions)
     }
 
     fn from_core(error: CoreError) -> Self {
         match error {
             CoreError::RoomNotFound(room_id) => Self::room_not_found(room_id),
             CoreError::RoomFull => Self::coded("room is full", ErrorCode::RoomFull),
-            CoreError::DuplicatePlayerName(name) => Self::duplicate_player_name(name, None),
+            CoreError::DuplicatePlayerName(name) => {
+                Self::duplicate_player_name(name, None, Vec::new())
+            }
             CoreError::MatchNotFinished => {
                 Self::coded("match is not finished", ErrorCode::MatchNotFinished)
             }
@@ -139,6 +145,7 @@ impl RoomManagerError {
             ),
             CoreError::AlreadyInRoom
             | CoreError::RoomFinished
+            | CoreError::MatchInProgress
             | CoreError::SpectatorsNotAllowed
             | CoreError::SpectatorAction
             | CoreError::PlayerDisconnected
@@ -428,8 +435,9 @@ impl RoomManager {
         if let Some(conflict) = room_lifecycle::player_name_conflict(room, player_id, &player_name)
         {
             return Err(RoomManagerError::duplicate_player_name(
-                conflict.name,
+                conflict.name.clone(),
                 Some(conflict.connected),
+                room_lifecycle::suggest_player_names(room, &conflict.name),
             ));
         }
 
