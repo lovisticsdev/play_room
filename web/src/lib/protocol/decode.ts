@@ -5,6 +5,7 @@ import { SERVER_MESSAGE_SCHEMA } from './schema';
 import type { RoomSnapshot, ServerMessage, ServerResult } from './types';
 
 const ajv = new Ajv({ allErrors: true, strict: false });
+addRustIntegerFormats(ajv);
 const validateServerMessage = ajv.compile(SERVER_MESSAGE_SCHEMA as object) as ValidateFunction;
 
 export class ProtocolDecodeError extends Error {
@@ -29,6 +30,29 @@ export function decodeServerMessage(raw: unknown): ServerMessage {
   const message = parsed as ServerMessage;
   assertSupportedSemantics(message);
   return message;
+}
+
+function addRustIntegerFormats(instance: Ajv): void {
+  instance.addFormat('uint', {
+    type: 'number',
+    validate: isSafeUnsignedInteger,
+  });
+  instance.addFormat('uint16', {
+    type: 'number',
+    validate: (value: number) => isSafeUnsignedInteger(value) && value <= 65_535,
+  });
+  instance.addFormat('uint32', {
+    type: 'number',
+    validate: (value: number) => isSafeUnsignedInteger(value) && value <= 4_294_967_295,
+  });
+  instance.addFormat('uint64', {
+    type: 'number',
+    validate: isSafeUnsignedInteger,
+  });
+}
+
+function isSafeUnsignedInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
 }
 
 function formatValidationErrors(errors: ErrorObject[] | null | undefined): string {

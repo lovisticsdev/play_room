@@ -1,3 +1,4 @@
+use crate::fanout::OutboundMessages;
 use crate::room_manager::{RoomManager, SeatExpiry, SpectatorExpiry};
 use play_room_core::RoomId;
 use std::sync::Arc;
@@ -22,11 +23,45 @@ pub fn schedule_round_timeout(
         if deadline_ms > current {
             tokio::time::sleep(Duration::from_millis(deadline_ms - current)).await;
         }
-        let mut locked = manager.lock().await;
-        if let Ok(messages) = locked.timeout_room(&room_id, round, now_ms()) {
-            locked.flush_messages(messages);
+        let messages = {
+            let mut locked = manager.lock().await;
+            locked.timeout_room(&room_id, round, now_ms()).ok()
+        };
+        if let Some(messages) = messages {
+            flush_and_schedule(manager, messages).await;
         }
     });
+}
+
+pub async fn flush_and_schedule(manager: Arc<Mutex<RoomManager>>, messages: OutboundMessages) {
+    let mut pending = messages;
+    let mut seat_expiries = Vec::new();
+    let mut spectator_expiries = Vec::new();
+
+    while !pending.is_empty() {
+        let outcomes = {
+            let mut locked = manager.lock().await;
+            locked.flush_messages(pending, now_ms())
+        };
+        pending = Vec::new();
+
+        for outcome in outcomes {
+            pending.extend(outcome.messages);
+            if let Some(expiry) = outcome.seat_expiry {
+                seat_expiries.push(expiry);
+            }
+            if let Some(expiry) = outcome.spectator_expiry {
+                spectator_expiries.push(expiry);
+            }
+        }
+    }
+
+    for expiry in seat_expiries {
+        schedule_seat_expiry(manager.clone(), expiry);
+    }
+    for expiry in spectator_expiries {
+        schedule_spectator_expiry(manager.clone(), expiry);
+    }
 }
 
 pub fn schedule_seat_expiry(manager: Arc<Mutex<RoomManager>>, expiry: SeatExpiry) {
@@ -39,7 +74,9 @@ pub fn schedule_seat_expiry(manager: Arc<Mutex<RoomManager>>, expiry: SeatExpiry
             let mut locked = manager.lock().await;
             match locked.expire_participant_seat(&expiry) {
                 Ok(outcome) => {
-                    locked.flush_messages(outcome.messages);
+                    let messages = outcome.messages;
+                    drop(locked);
+                    flush_and_schedule(manager.clone(), messages).await;
                     outcome.spectator_expiry
                 }
                 Err(_) => None,
@@ -57,9 +94,12 @@ pub fn schedule_spectator_expiry(manager: Arc<Mutex<RoomManager>>, expiry: Spect
         if expiry.expires_at_ms > current {
             tokio::time::sleep(Duration::from_millis(expiry.expires_at_ms - current)).await;
         }
-        let mut locked = manager.lock().await;
-        if let Ok(messages) = locked.expire_spectator(&expiry) {
-            locked.flush_messages(messages);
+        let messages = {
+            let mut locked = manager.lock().await;
+            locked.expire_spectator(&expiry).ok()
+        };
+        if let Some(messages) = messages {
+            flush_and_schedule(manager, messages).await;
         }
     });
 }

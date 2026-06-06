@@ -1056,12 +1056,120 @@ fn saturated_outbound_queue_drops_active_socket() {
     let (tx, _rx) = crate::broadcast::channel_with_capacity(1);
     let alice = manager.connect("Alice".to_owned(), None, tx);
 
-    manager.respond(&alice.player_id, 1, ServerResult::Ok);
-    manager.respond(&alice.player_id, 2, ServerResult::Ok);
+    let mut messages = RoomManager::response_messages(&alice.player_id, 1, ServerResult::Ok);
+    messages.extend(RoomManager::response_messages(
+        &alice.player_id,
+        2,
+        ServerResult::Ok,
+    ));
+    let outcomes = manager.flush_messages(messages, 1_000);
 
     assert_eq!(manager.session_registry.active_count(), 0);
+    assert_eq!(outcomes.len(), 1);
     assert_eq!(
         manager.session_registry.player_name(&alice.player_id),
         Some("Alice")
     );
+}
+
+#[test]
+fn saturated_participant_socket_marks_player_disconnected_and_schedules_seat_expiry() {
+    let mut manager = RoomManager::default();
+    let (alice_tx, _alice_rx) = crate::broadcast::channel_with_capacity(1);
+    let alice = manager.connect("Alice".to_owned(), None, alice_tx);
+    let bob = connect_named(&mut manager, "Bob");
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "room".to_owned(), None)
+        .unwrap();
+    manager.join_room(&bob.player_id, &room_id).unwrap();
+
+    let mut messages = RoomManager::response_messages(&alice.player_id, 1, ServerResult::Ok);
+    messages.extend(RoomManager::response_messages(
+        &alice.player_id,
+        2,
+        ServerResult::Ok,
+    ));
+    let outcomes = manager.flush_messages(messages, 10_000);
+
+    let room = manager.rooms.get(&room_id).unwrap();
+    let alice_view = room
+        .snapshot()
+        .players
+        .into_iter()
+        .find(|player| player.id == alice.player_id)
+        .unwrap();
+    let outcome = outcomes.first().expect("expected disconnect outcome");
+
+    assert!(!alice_view.connected);
+    assert!(outcome.seat_expiry.is_some());
+    assert!(outcome.spectator_expiry.is_none());
+    assert!(outcome.messages.iter().any(|(_, message)| matches!(
+        message,
+        ServerMessage::Event {
+            event: ServerEvent::RoomEvent {
+                event: RoomEvent::PlayerDisconnected { player_id },
+                ..
+            }
+        } if player_id == &alice.player_id
+    )));
+}
+
+#[test]
+fn saturated_spectator_socket_marks_player_disconnected_and_schedules_name_expiry() {
+    let mut manager = RoomManager::default();
+    let alice = connect_named(&mut manager, "Alice");
+    let (mira_tx, _mira_rx) = crate::broadcast::channel_with_capacity(1);
+    let mira = manager.connect("Mira".to_owned(), None, mira_tx);
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "room".to_owned(), None)
+        .unwrap();
+    manager.spectate_room(&mira.player_id, &room_id).unwrap();
+
+    let mut messages = RoomManager::response_messages(&mira.player_id, 1, ServerResult::Ok);
+    messages.extend(RoomManager::response_messages(
+        &mira.player_id,
+        2,
+        ServerResult::Ok,
+    ));
+    let outcomes = manager.flush_messages(messages, 10_000);
+
+    let room = manager.rooms.get(&room_id).unwrap();
+    let mira_view = room
+        .snapshot()
+        .players
+        .into_iter()
+        .find(|player| player.id == mira.player_id)
+        .unwrap();
+    let outcome = outcomes.first().expect("expected disconnect outcome");
+
+    assert_eq!(mira_view.role, PlayerRole::Spectator);
+    assert!(!mira_view.connected);
+    assert!(outcome.seat_expiry.is_none());
+    assert!(outcome.spectator_expiry.is_some());
+}
+
+#[test]
+fn stale_disconnect_after_backpressure_drop_is_ignored() {
+    let mut manager = RoomManager::default();
+    let (alice_tx, _alice_rx) = crate::broadcast::channel_with_capacity(1);
+    let alice = manager.connect("Alice".to_owned(), None, alice_tx);
+    let bob = connect_named(&mut manager, "Bob");
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "room".to_owned(), None)
+        .unwrap();
+    manager.join_room(&bob.player_id, &room_id).unwrap();
+
+    let mut messages = RoomManager::response_messages(&alice.player_id, 1, ServerResult::Ok);
+    messages.extend(RoomManager::response_messages(
+        &alice.player_id,
+        2,
+        ServerResult::Ok,
+    ));
+    manager.flush_messages(messages, 10_000);
+
+    let outcome = manager.disconnect(&alice.player_id, alice.connection_id, 20_000);
+
+    assert!(outcome.messages.is_empty());
+    assert!(outcome.seat_expiry.is_none());
+    assert!(outcome.spectator_expiry.is_none());
 }

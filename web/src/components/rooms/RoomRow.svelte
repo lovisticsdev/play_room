@@ -12,7 +12,7 @@
   let warning = false;
   let suggestions: string[] = [];
 
-  $: actionLabel = action === 'current' ? 'Current' : action === 'join' ? 'Join' : 'Watch';
+  $: actionLabel = action === 'current' ? 'Current' : action === 'join' ? 'Join / Watch' : 'Watch';
 
   async function performRoomAction() {
     if (action === 'join') {

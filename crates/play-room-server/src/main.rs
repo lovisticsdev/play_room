@@ -17,14 +17,16 @@ mod websocket_session;
 
 use clap::Parser;
 use config::{ServerArgs, ServerConfig};
+use tracing_subscriber::filter::Directive;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), errors::ServerError> {
+    let default_directive = "play_room_server=info"
+        .parse::<Directive>()
+        .map_err(|err| errors::ServerError::Config(format!("invalid log directive: {err}")))?;
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env().add_directive("play_room_server=info".parse().unwrap()),
-        )
+        .with_env_filter(EnvFilter::from_default_env().add_directive(default_directive))
         .init();
 
     let args = ServerArgs::parse();

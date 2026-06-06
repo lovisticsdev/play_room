@@ -49,6 +49,9 @@ pub enum CoreError {
     #[error("round is not active")]
     RoundNotActive,
 
+    #[error("round deadline has expired")]
+    RoundExpired,
+
     #[error("round is already active")]
     RoundAlreadyActive,
 

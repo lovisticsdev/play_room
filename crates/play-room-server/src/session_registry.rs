@@ -122,8 +122,17 @@ impl SessionRegistry {
         expired
     }
 
-    pub fn drop_socket(&mut self, player_id: &PlayerId) -> bool {
-        self.sessions.remove(player_id).is_some()
+    pub fn force_disconnect_socket(&mut self, player_id: &PlayerId, now_ms: u64) -> bool {
+        let removed = self.sessions.remove(player_id).is_some();
+        if !removed {
+            return false;
+        }
+
+        self.connection_ids.remove(player_id);
+        if self.player_names.contains_key(player_id) {
+            self.disconnected_at_ms.insert(player_id.clone(), now_ms);
+        }
+        true
     }
 
     #[cfg(test)]

@@ -61,7 +61,30 @@ impl ServerConfig {
         if let Some(port) = args.port {
             cfg.port = port;
         }
+        cfg.validate()?;
         Ok(cfg)
+    }
+
+    fn validate(&self) -> Result<(), ServerError> {
+        if self.host.trim().is_empty() {
+            return Err(ServerError::Config("host must not be empty".to_owned()));
+        }
+        if self.max_rooms == 0 {
+            return Err(ServerError::Config(
+                "max_rooms must be at least 1".to_owned(),
+            ));
+        }
+        if self.max_clients == 0 {
+            return Err(ServerError::Config(
+                "max_clients must be at least 1".to_owned(),
+            ));
+        }
+        if self.abandoned_session_ttl_seconds == 0 {
+            return Err(ServerError::Config(
+                "abandoned_session_ttl_seconds must be at least 1".to_owned(),
+            ));
+        }
+        Ok(())
     }
 
     pub fn addr(&self) -> String {
@@ -74,5 +97,41 @@ impl ServerConfig {
             max_clients: self.max_clients,
             abandoned_session_ttl_ms: self.abandoned_session_ttl_seconds.saturating_mul(1_000),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_config() -> ServerConfig {
+        ServerConfig::default()
+    }
+
+    #[test]
+    fn config_validation_accepts_defaults() {
+        assert!(valid_config().validate().is_ok());
+    }
+
+    #[test]
+    fn config_validation_rejects_empty_host() {
+        let mut config = valid_config();
+        config.host = "  ".to_owned();
+
+        assert!(matches!(config.validate(), Err(ServerError::Config(_))));
+    }
+
+    #[test]
+    fn config_validation_rejects_zero_limits() {
+        let mut rooms = valid_config();
+        rooms.max_rooms = 0;
+        let mut clients = valid_config();
+        clients.max_clients = 0;
+        let mut ttl = valid_config();
+        ttl.abandoned_session_ttl_seconds = 0;
+
+        assert!(matches!(rooms.validate(), Err(ServerError::Config(_))));
+        assert!(matches!(clients.validate(), Err(ServerError::Config(_))));
+        assert!(matches!(ttl.validate(), Err(ServerError::Config(_))));
     }
 }

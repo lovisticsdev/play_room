@@ -92,6 +92,51 @@ describe('decodeServerMessage', () => {
     ).toThrow(/expects exactly 2 active participants/);
   });
 
+  it('rejects unsafe uint64 request ids', () => {
+    const message = welcomeMessage();
+    message.request_id = Number.MAX_SAFE_INTEGER + 1;
+
+    expect(() => decodeServerMessage(encode(message))).toThrow(ProtocolDecodeError);
+  });
+
+  it('rejects uint32 overflow in room snapshots', () => {
+    const message = roomSnapshotMessage();
+    message.event.room.round = 4_294_967_296;
+
+    expect(() => decodeServerMessage(encode(message))).toThrow(ProtocolDecodeError);
+  });
+
+  it('rejects uint16 overflow in welcome protocol versions', () => {
+    expect(() => decodeServerMessage(encode(welcomeMessage(65_536)))).toThrow(ProtocolDecodeError);
+  });
+
+  it('accepts max valid uint32 values where schema allows them', () => {
+    const message = {
+      kind: 'event',
+      event: {
+        type: 'room_event',
+        room_id: 'room-testroom',
+        event: {
+          event: 'match_format_changed',
+          target_score: 4_294_967_295,
+        },
+      },
+    };
+
+    expect(decodeServerMessage(encode(message))).toMatchObject(message);
+  });
+
+  it('rejects fractional integer fields', () => {
+    const message = roomSnapshotMessage();
+    (message.event.room as { phase: unknown }).phase = {
+      phase: 'in_round',
+      round: 1.5,
+      deadline_ms: 2_000,
+    };
+
+    expect(() => decodeServerMessage(encode(message))).toThrow(ProtocolDecodeError);
+  });
+
   it('accepts valid welcome responses', () => {
     const decoded = decodeServerMessage(encode(welcomeMessage()));
 

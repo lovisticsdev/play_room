@@ -2,7 +2,9 @@ use crate::broadcast::channel;
 use crate::errors::ServerError;
 use crate::room_manager::RoomManager;
 use crate::router::route;
-use crate::scheduler::{now_ms, schedule_seat_expiry, schedule_spectator_expiry};
+use crate::scheduler::{
+    flush_and_schedule, now_ms, schedule_seat_expiry, schedule_spectator_expiry,
+};
 use futures_util::{SinkExt, StreamExt};
 use play_room_protocol::{
     decode_client, encode_server, ClientRequest, ServerMessage, ServerResult,
@@ -60,15 +62,15 @@ pub async fn handle_websocket_connection(
         let mut locked = manager.lock().await;
         match locked.try_connect_at(name, reconnect_token, tx, now_ms()) {
             Ok(connected) => {
-                locked.welcome(&connected, first.request_id);
-                locked.flush_messages(connected.messages.clone());
-                Ok(connected)
+                let mut messages = locked.welcome_messages(&connected, first.request_id);
+                messages.extend(connected.messages.clone());
+                Ok((connected, messages))
             }
             Err(error) => Err(error.into_server_result()),
         }
     };
-    let connected = match connect_result {
-        Ok(connected) => connected,
+    let (connected, connect_messages) = match connect_result {
+        Ok(result) => result,
         Err(result) => {
             let msg = ServerMessage::Response {
                 request_id: first.request_id,
@@ -80,6 +82,7 @@ pub async fn handle_websocket_connection(
             return Ok(());
         }
     };
+    flush_and_schedule(manager.clone(), connect_messages).await;
 
     debug!(player_id = %connected.player_id, "websocket client connected");
 
@@ -94,12 +97,12 @@ pub async fn handle_websocket_connection(
                         match decode_client(&line) {
                             Ok(envelope) => route(manager.clone(), connected.player_id.clone(), envelope).await,
                             Err(err) => {
-                                let mut locked = manager.lock().await;
-                                locked.respond(
+                                let messages = RoomManager::response_messages(
                                     &connected.player_id,
                                     0,
                                     ServerResult::error(err.to_string()),
                                 );
+                                flush_and_schedule(manager.clone(), messages).await;
                             }
                         }
                     }
@@ -126,10 +129,7 @@ pub async fn handle_websocket_connection(
         let mut locked = manager.lock().await;
         locked.disconnect(&connected.player_id, connected.connection_id, now_ms())
     };
-    {
-        let mut locked = manager.lock().await;
-        locked.flush_messages(outcome.messages);
-    }
+    flush_and_schedule(manager.clone(), outcome.messages).await;
     if let Some(expiry) = outcome.seat_expiry {
         schedule_seat_expiry(manager.clone(), expiry);
     }

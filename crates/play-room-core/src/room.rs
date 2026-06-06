@@ -226,6 +226,9 @@ impl GameRoom {
         if !player.connected {
             return Err(CoreError::PlayerDisconnected);
         }
+        if player.ready == ready {
+            return Ok(Vec::new());
+        }
         player.ready = ready;
         let mut events = vec![RoomEvent::ReadyChanged {
             player_id: player_id.clone(),
@@ -312,6 +315,21 @@ impl GameRoom {
         if spectator && !self.rules.allow_spectators {
             return Err(CoreError::SpectatorsNotAllowed);
         }
+        let new_role = if spectator {
+            PlayerRole::Spectator
+        } else {
+            PlayerRole::Participant
+        };
+        let player = self
+            .players
+            .get(player_id)
+            .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
+        if !player.connected {
+            return Err(CoreError::PlayerDisconnected);
+        }
+        if player.role == new_role {
+            return Ok(Vec::new());
+        }
         if matches!(self.phase, RoomPhase::InRound { .. }) {
             return Err(CoreError::RoundAlreadyActive);
         }
@@ -323,11 +341,6 @@ impl GameRoom {
             .players
             .get_mut(player_id)
             .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
-        let new_role = if spectator {
-            PlayerRole::Spectator
-        } else {
-            PlayerRole::Participant
-        };
         if new_role == PlayerRole::Participant
             && player.role == PlayerRole::Spectator
             && participants >= self.rules.max_players
@@ -346,7 +359,7 @@ impl GameRoom {
         &mut self,
         player_id: &PlayerId,
         mv: Move,
-        _now_ms: u64,
+        now_ms: u64,
     ) -> Result<Vec<RoomEvent>, CoreError> {
         if !mv.valid_for(self.rules.game) {
             return Err(CoreError::InvalidMove {
@@ -354,8 +367,14 @@ impl GameRoom {
                 mv,
             });
         }
-        if !matches!(self.phase, RoomPhase::InRound { .. }) {
-            return Err(CoreError::RoundNotActive);
+        let deadline = match self.phase {
+            RoomPhase::InRound { deadline_ms, .. } => Deadline {
+                expires_at_ms: deadline_ms,
+            },
+            _ => return Err(CoreError::RoundNotActive),
+        };
+        if deadline.is_expired(now_ms) {
+            return Err(CoreError::RoundExpired);
         }
         let player = self
             .players
@@ -1032,6 +1051,69 @@ mod tests {
     }
 
     #[test]
+    fn setting_ready_to_existing_value_is_noop() {
+        let host = Player::participant(PlayerId::new("alice"), "Alice");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+
+        room.apply(RoomCommand::SetReady {
+            player_id: PlayerId::new("alice"),
+            ready: true,
+            now_ms: 1_000,
+        })
+        .unwrap();
+        let events = room
+            .apply(RoomCommand::SetReady {
+                player_id: PlayerId::new("alice"),
+                ready: true,
+                now_ms: 1_001,
+            })
+            .unwrap();
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn setting_existing_spectator_role_is_noop() {
+        let host = Player::participant(PlayerId::new("alice"), "Alice");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+        room.apply(RoomCommand::Join {
+            player: Player::spectator(PlayerId::new("mira"), "Mira"),
+        })
+        .unwrap();
+
+        let events = room
+            .apply(RoomCommand::SetSpectator {
+                player_id: PlayerId::new("mira"),
+                spectator: true,
+            })
+            .unwrap();
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn disconnected_player_cannot_switch_role() {
+        let host = Player::participant(PlayerId::new("alice"), "Alice");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+        room.apply(RoomCommand::Disconnect {
+            player_id: PlayerId::new("alice"),
+        })
+        .unwrap();
+
+        let err = room
+            .apply(RoomCommand::SetSpectator {
+                player_id: PlayerId::new("alice"),
+                spectator: true,
+            })
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::PlayerDisconnected);
+    }
+
+    #[test]
     fn host_can_update_race_target_after_match_finishes() {
         let mut room = two_player_room();
         alice_wins_round(&mut room, 1_000);
@@ -1078,6 +1160,59 @@ mod tests {
         ready(&mut room, "bob", 4000);
 
         assert!(matches!(room.phase(), RoomPhase::InRound { round: 1, .. }));
+    }
+
+    #[test]
+    fn submit_move_before_deadline_is_accepted() {
+        let mut room = two_player_room();
+        ready(&mut room, "alice", 1000);
+        ready(&mut room, "bob", 1000);
+        let deadline_ms = match room.phase() {
+            RoomPhase::InRound { deadline_ms, .. } => *deadline_ms,
+            _ => panic!("round should be active"),
+        };
+
+        let events = room
+            .apply(RoomCommand::SubmitMove {
+                player_id: PlayerId::new("alice"),
+                mv: Move::Rock,
+                now_ms: deadline_ms - 1,
+            })
+            .unwrap();
+
+        assert_eq!(room.moves.get(&PlayerId::new("alice")), Some(&Move::Rock));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::MoveAccepted { player_id } if player_id == &PlayerId::new("alice")
+        )));
+    }
+
+    #[test]
+    fn submit_move_at_or_after_deadline_is_rejected() {
+        let mut room = two_player_room();
+        ready(&mut room, "alice", 1000);
+        ready(&mut room, "bob", 1000);
+        let (round, deadline_ms) = match room.phase() {
+            RoomPhase::InRound { round, deadline_ms } => (*round, *deadline_ms),
+            _ => panic!("round should be active"),
+        };
+
+        let err = room
+            .apply(RoomCommand::SubmitMove {
+                player_id: PlayerId::new("alice"),
+                mv: Move::Rock,
+                now_ms: deadline_ms,
+            })
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::RoundExpired);
+        assert!(!room.moves.contains_key(&PlayerId::new("alice")));
+        room.apply(RoomCommand::TimeoutRound {
+            round,
+            now_ms: deadline_ms,
+        })
+        .unwrap();
+        assert!(matches!(room.phase(), RoomPhase::Lobby));
     }
 
     #[test]

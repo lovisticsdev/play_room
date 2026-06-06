@@ -3,6 +3,8 @@
   import { sessionStore } from '../../lib/stores/session';
   import { uiStore } from '../../lib/stores/ui';
   import { playRoomClient } from '../../lib/client/play-room-client';
+  import { copyText } from '../../lib/browser/clipboard';
+  import { eventLogStore } from '../../lib/stores/event-log';
 
   let copied = false;
 
@@ -12,7 +14,10 @@
     const token = $sessionStore.reconnectToken;
     if (!token) return;
 
-    await navigator.clipboard.writeText(token);
+    if (!(await copyText(token))) {
+      eventLogStore.push('warning', 'Could not copy reconnect token');
+      return;
+    }
     copied = true;
     setTimeout(() => {
       copied = false;

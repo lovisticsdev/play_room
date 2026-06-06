@@ -1,82 +1,101 @@
+use crate::fanout::OutboundMessages;
 use crate::room_manager::{RoomManager, RoomManagerError};
-use crate::scheduler::{now_ms, schedule_round_timeout};
-use play_room_core::RoomCommand;
+use crate::scheduler::{flush_and_schedule, now_ms, schedule_round_timeout};
+use play_room_core::{PlayerId, RoomCommand};
 use play_room_protocol::{ClientEnvelope, ClientRequest, ServerResult};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub async fn route(
     manager: Arc<Mutex<RoomManager>>,
-    player_id: play_room_core::PlayerId,
+    player_id: PlayerId,
     envelope: ClientEnvelope,
 ) {
     let request_id = envelope.request_id;
     match envelope.request {
         ClientRequest::Connect { .. } => {
-            let mut locked = manager.lock().await;
-            locked.respond(
-                &player_id,
+            respond(
+                manager,
+                player_id,
                 request_id,
                 ServerResult::error("already connected"),
-            );
+            )
+            .await;
         }
         ClientRequest::Ping => {
-            let mut locked = manager.lock().await;
-            locked.respond(&player_id, request_id, ServerResult::Pong);
+            respond(manager, player_id, request_id, ServerResult::Pong).await;
         }
         ClientRequest::ListRooms => {
-            let mut locked = manager.lock().await;
-            let rooms = locked.list_rooms();
-            locked.respond(&player_id, request_id, ServerResult::RoomList { rooms });
+            let rooms = {
+                let locked = manager.lock().await;
+                locked.list_rooms()
+            };
+            respond(
+                manager,
+                player_id,
+                request_id,
+                ServerResult::RoomList { rooms },
+            )
+            .await;
         }
         ClientRequest::CreateRoom { name, rules } => {
-            let mut locked = manager.lock().await;
-            match locked.create_room(&player_id, name, rules) {
+            let result = {
+                let mut locked = manager.lock().await;
+                locked.create_room(&player_id, name, rules)
+            };
+            match result {
                 Ok((_room_id, messages)) => {
-                    locked.respond(&player_id, request_id, ServerResult::Ok);
-                    locked.flush_messages(messages);
+                    respond_with_messages(manager, player_id, request_id, messages).await;
                 }
-                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+                Err(error) => respond_error(manager, player_id, request_id, error).await,
             }
         }
         ClientRequest::JoinRoom { room_id } => {
-            let mut locked = manager.lock().await;
-            match locked.join_room(&player_id, &room_id) {
+            let result = {
+                let mut locked = manager.lock().await;
+                locked.join_room(&player_id, &room_id)
+            };
+            match result {
                 Ok(messages) => {
-                    locked.respond(&player_id, request_id, ServerResult::Ok);
-                    locked.flush_messages(messages);
+                    respond_with_messages(manager, player_id, request_id, messages).await
                 }
-                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+                Err(error) => respond_error(manager, player_id, request_id, error).await,
             }
         }
         ClientRequest::SpectateRoom { room_id } => {
-            let mut locked = manager.lock().await;
-            match locked.spectate_room(&player_id, &room_id) {
+            let result = {
+                let mut locked = manager.lock().await;
+                locked.spectate_room(&player_id, &room_id)
+            };
+            match result {
                 Ok(messages) => {
-                    locked.respond(&player_id, request_id, ServerResult::Ok);
-                    locked.flush_messages(messages);
+                    respond_with_messages(manager, player_id, request_id, messages).await
                 }
-                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+                Err(error) => respond_error(manager, player_id, request_id, error).await,
             }
         }
         ClientRequest::EnterRoom { room_id, mode } => {
-            let mut locked = manager.lock().await;
-            match locked.enter_room(&player_id, &room_id, mode) {
+            let result = {
+                let mut locked = manager.lock().await;
+                locked.enter_room(&player_id, &room_id, mode)
+            };
+            match result {
                 Ok(messages) => {
-                    locked.respond(&player_id, request_id, ServerResult::Ok);
-                    locked.flush_messages(messages);
+                    respond_with_messages(manager, player_id, request_id, messages).await
                 }
-                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+                Err(error) => respond_error(manager, player_id, request_id, error).await,
             }
         }
         ClientRequest::UpdateDisplayName { name } => {
-            let mut locked = manager.lock().await;
-            match locked.update_display_name(&player_id, name) {
+            let result = {
+                let mut locked = manager.lock().await;
+                locked.update_display_name(&player_id, name)
+            };
+            match result {
                 Ok(messages) => {
-                    locked.respond(&player_id, request_id, ServerResult::Ok);
-                    locked.flush_messages(messages);
+                    respond_with_messages(manager, player_id, request_id, messages).await
                 }
-                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+                Err(error) => respond_error(manager, player_id, request_id, error).await,
             }
         }
         ClientRequest::UpdateMatchFormat { target_score } => {
@@ -87,13 +106,15 @@ pub async fn route(
             apply_room_command(manager, player_id, request_id, command).await;
         }
         ClientRequest::LeaveRoom => {
-            let mut locked = manager.lock().await;
-            match locked.leave_current_room(&player_id) {
+            let result = {
+                let mut locked = manager.lock().await;
+                locked.leave_current_room(&player_id)
+            };
+            match result {
                 Ok(messages) => {
-                    locked.respond(&player_id, request_id, ServerResult::Ok);
-                    locked.flush_messages(messages);
+                    respond_with_messages(manager, player_id, request_id, messages).await
                 }
-                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+                Err(error) => respond_error(manager, player_id, request_id, error).await,
             }
         }
         ClientRequest::SetReady { ready } => {
@@ -130,30 +151,60 @@ pub async fn route(
 
 async fn apply_room_command(
     manager: Arc<Mutex<RoomManager>>,
-    player_id: play_room_core::PlayerId,
+    player_id: PlayerId,
     request_id: u64,
     command: RoomCommand,
 ) {
-    let mut locked = manager.lock().await;
-    match locked.apply_to_current_room(&player_id, command) {
-        Ok((room_id, events, timer)) => {
-            locked.respond(&player_id, request_id, ServerResult::Ok);
-            let messages = locked.room_messages(&room_id, events);
-            locked.flush_messages(messages);
-            drop(locked);
+    let result = {
+        let mut locked = manager.lock().await;
+        locked
+            .apply_to_current_room(&player_id, command)
+            .map(|(room_id, events, timer)| {
+                let messages = locked.room_messages(&room_id, events);
+                (room_id, messages, timer)
+            })
+    };
+
+    match result {
+        Ok((room_id, messages, timer)) => {
+            respond_with_messages(manager.clone(), player_id, request_id, messages).await;
             if let Some((round, deadline_ms)) = timer {
                 schedule_round_timeout(manager, room_id, round, deadline_ms);
             }
         }
-        Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+        Err(error) => respond_error(manager, player_id, request_id, error).await,
     }
 }
 
-fn respond_error(
-    manager: &mut RoomManager,
-    player_id: &play_room_core::PlayerId,
+async fn respond_with_messages(
+    manager: Arc<Mutex<RoomManager>>,
+    player_id: PlayerId,
+    request_id: u64,
+    mut messages: OutboundMessages,
+) {
+    let mut response = RoomManager::response_messages(&player_id, request_id, ServerResult::Ok);
+    response.append(&mut messages);
+    flush_and_schedule(manager, response).await;
+}
+
+async fn respond(
+    manager: Arc<Mutex<RoomManager>>,
+    player_id: PlayerId,
+    request_id: u64,
+    result: ServerResult,
+) {
+    flush_and_schedule(
+        manager,
+        RoomManager::response_messages(&player_id, request_id, result),
+    )
+    .await;
+}
+
+async fn respond_error(
+    manager: Arc<Mutex<RoomManager>>,
+    player_id: PlayerId,
     request_id: u64,
     error: RoomManagerError,
 ) {
-    manager.respond(player_id, request_id, error.into_server_result());
+    respond(manager, player_id, request_id, error.into_server_result()).await;
 }

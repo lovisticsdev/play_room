@@ -31,6 +31,17 @@ export class PlayRoomSocket {
     this.connectionGeneration = generation;
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const resolveOnce = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const rejectOnce = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
       const socket = new WebSocket(url);
       this.socket = socket;
 
@@ -38,7 +49,7 @@ export class PlayRoomSocket {
         'open',
         () => {
           if (!this.isCurrentSocket(socket, generation)) return;
-          resolve();
+          resolveOnce();
         },
         { once: true },
       );
@@ -48,7 +59,7 @@ export class PlayRoomSocket {
         (event) => {
           if (!this.isCurrentSocket(socket, generation)) return;
           this.errorListeners.forEach((listener) => listener(event));
-          reject(new Error(`WebSocket connection failed: ${url}`));
+          rejectOnce(new Error(`WebSocket connection failed: ${url}`));
         },
         { once: true },
       );
@@ -63,6 +74,7 @@ export class PlayRoomSocket {
         if (this.socket === socket) this.socket = null;
         this.rejectPending(new Error('WebSocket closed'));
         this.closeListeners.forEach((listener) => listener(event));
+        rejectOnce(new Error('WebSocket closed before opening'));
       });
     });
   }
@@ -83,7 +95,13 @@ export class PlayRoomSocket {
       }, REQUEST_TIMEOUT_MS);
 
       this.pending.set(request_id, { resolve, reject, timeoutId });
-      socket.send(JSON.stringify(envelope));
+      try {
+        socket.send(JSON.stringify(envelope));
+      } catch (error) {
+        clearTimeout(timeoutId);
+        this.pending.delete(request_id);
+        reject(error instanceof Error ? error : new Error('WebSocket send failed'));
+      }
     });
   }
 

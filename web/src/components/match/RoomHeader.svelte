@@ -6,15 +6,21 @@
   import Badge from '../ui/Badge.svelte';
   import RoundTimer from './RoundTimer.svelte';
   import { playerName, roundCountdownDeadline } from '../../lib/view/room-selectors';
+  import { copyText } from '../../lib/browser/clipboard';
 
   export let room: RoomSnapshot;
 
   let copied = false;
+  let copyError: string | null = null;
   let formatBusy = false;
   let formatError: string | null = null;
 
   async function copyRoomId() {
-    await navigator.clipboard.writeText(room.id);
+    copyError = null;
+    if (!(await copyText(room.id))) {
+      copyError = 'Could not copy room code';
+      return;
+    }
     copied = true;
     setTimeout(() => {
       copied = false;
@@ -75,6 +81,9 @@
       {#if formatError}
         <span class="room-header-error">{formatError}</span>
       {/if}
+    {/if}
+    {#if copyError}
+      <span class="room-header-error">{copyError}</span>
     {/if}
   </div>
 

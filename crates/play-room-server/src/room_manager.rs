@@ -152,6 +152,7 @@ impl RoomManagerError {
             | CoreError::SpectatorAction
             | CoreError::PlayerDisconnected
             | CoreError::RoundNotActive
+            | CoreError::RoundExpired
             | CoreError::RoundAlreadyActive
             | CoreError::InvalidMove { .. }
             | CoreError::NotEnoughReadyParticipants
@@ -306,6 +307,14 @@ impl RoomManager {
                 spectator_expiry: None,
             };
         }
+        self.disconnect_room_player_after_transport_loss(player_id, now_ms)
+    }
+
+    fn disconnect_room_player_after_transport_loss(
+        &mut self,
+        player_id: &PlayerId,
+        now_ms: u64,
+    ) -> DisconnectOutcome {
         if let Some(room_id) = self.room_memberships.room_for(player_id).cloned() {
             if let Some(room) = self.rooms.get_mut(&room_id) {
                 if let Ok(events) = room.apply(RoomCommand::Disconnect {
@@ -333,17 +342,23 @@ impl RoomManager {
         }
     }
 
-    pub fn send_to(&mut self, player_id: &PlayerId, message: ServerMessage) {
-        if fanout::send_to(self.session_registry.sessions(), player_id, message).is_err() {
-            self.drop_backpressured_sessions(vec![player_id.clone()]);
-        }
-    }
-    pub fn respond(&mut self, player_id: &PlayerId, request_id: u64, result: ServerResult) {
-        self.send_to(player_id, ServerMessage::Response { request_id, result });
+    pub fn response_messages(
+        player_id: &PlayerId,
+        request_id: u64,
+        result: ServerResult,
+    ) -> OutboundMessages {
+        vec![(
+            player_id.clone(),
+            ServerMessage::Response { request_id, result },
+        )]
     }
 
-    pub fn welcome(&mut self, connected: &ConnectedPlayer, request_id: u64) {
-        self.respond(
+    pub fn welcome_messages(
+        &self,
+        connected: &ConnectedPlayer,
+        request_id: u64,
+    ) -> OutboundMessages {
+        Self::response_messages(
             &connected.player_id,
             request_id,
             ServerResult::Welcome {
@@ -357,7 +372,7 @@ impl RoomManager {
                 stale_token_replaced: connected.stale_token_replaced,
                 room_restored: connected.room_restored,
             },
-        );
+        )
     }
 
     pub fn list_rooms(&self) -> Vec<RoomSummary> {
@@ -796,15 +811,30 @@ impl RoomManager {
         Some(snapshot)
     }
 
-    pub fn flush_messages(&mut self, messages: OutboundMessages) {
+    pub fn flush_messages(
+        &mut self,
+        messages: OutboundMessages,
+        now_ms: u64,
+    ) -> Vec<DisconnectOutcome> {
         let failed = fanout::flush_messages(self.session_registry.sessions(), messages);
-        self.drop_backpressured_sessions(failed);
+        self.disconnect_backpressured_sessions(failed, now_ms)
     }
 
-    fn drop_backpressured_sessions(&mut self, player_ids: Vec<PlayerId>) {
+    fn disconnect_backpressured_sessions(
+        &mut self,
+        player_ids: Vec<PlayerId>,
+        now_ms: u64,
+    ) -> Vec<DisconnectOutcome> {
+        let mut outcomes = Vec::new();
         for player_id in player_ids {
-            self.session_registry.drop_socket(&player_id);
+            if self
+                .session_registry
+                .force_disconnect_socket(&player_id, now_ms)
+            {
+                outcomes.push(self.disconnect_room_player_after_transport_loss(&player_id, now_ms));
+            }
         }
+        outcomes
     }
 
     pub fn cleanup_abandoned_sessions(&mut self, now_ms: u64) -> Vec<PlayerId> {
