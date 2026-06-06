@@ -2,7 +2,15 @@
   import { sessionStore } from '../../lib/stores/session';
   import { playRoomClient } from '../../lib/client/play-room-client';
   import type { RoomSnapshot } from '../../lib/protocol/types';
-  import { gameLabel, phaseLabel, raceToLabel, roundLabel, RACE_TARGETS, type RaceTarget } from '../../lib/protocol/rules';
+  import {
+    gameLabel,
+    phaseLabel,
+    raceToDescription,
+    raceToLabel,
+    roundLabel,
+    RACE_TARGETS,
+    type RaceTarget,
+  } from '../../lib/protocol/rules';
   import Badge from '../ui/Badge.svelte';
   import RoundTimer from './RoundTimer.svelte';
   import { playerName, roundCountdownDeadline } from '../../lib/view/room-selectors';
@@ -71,6 +79,8 @@
             type="button"
             class:active={room.rules.target_score === target}
             disabled={formatBusy}
+            title={raceToDescription(target)}
+            aria-label={raceToDescription(target)}
             onclick={() => setRaceTarget(target)}
           >
             {target}

@@ -2,7 +2,15 @@
   import { roomsStore } from '../../lib/stores/rooms';
   import { sessionStore } from '../../lib/stores/session';
   import { isPlayRoomRequestError, playRoomClient } from '../../lib/client/play-room-client';
-  import { defaultRules, gameLabel, raceToLabel, RACE_TARGETS, type RaceTarget } from '../../lib/protocol/rules';
+  import {
+    defaultRules,
+    gameDescription,
+    gameLabel,
+    raceToDescription,
+    raceToLabel,
+    RACE_TARGETS,
+    type RaceTarget,
+  } from '../../lib/protocol/rules';
   import type { GameKind } from '../../lib/protocol/types';
   import Button from '../ui/Button.svelte';
   import TextInput from '../ui/TextInput.svelte';
@@ -68,8 +76,24 @@
     <div class="option-group">
       <span>Game</span>
       <div class="segmented-control">
-        <button class:active={game === 'rock_paper_scissors_lizard_spock'} type="button" onclick={() => (game = 'rock_paper_scissors_lizard_spock')}>{gameLabel('rock_paper_scissors_lizard_spock')}</button>
-        <button class:active={game === 'rock_paper_scissors'} type="button" onclick={() => (game = 'rock_paper_scissors')}>{gameLabel('rock_paper_scissors')}</button>
+        <button
+          class:active={game === 'rock_paper_scissors_lizard_spock'}
+          type="button"
+          title={gameDescription('rock_paper_scissors_lizard_spock')}
+          aria-label={gameDescription('rock_paper_scissors_lizard_spock')}
+          onclick={() => (game = 'rock_paper_scissors_lizard_spock')}
+        >
+          {gameLabel('rock_paper_scissors_lizard_spock')}
+        </button>
+        <button
+          class:active={game === 'rock_paper_scissors'}
+          type="button"
+          title={gameDescription('rock_paper_scissors')}
+          aria-label={gameDescription('rock_paper_scissors')}
+          onclick={() => (game = 'rock_paper_scissors')}
+        >
+          {gameLabel('rock_paper_scissors')}
+        </button>
       </div>
     </div>
 
@@ -77,7 +101,13 @@
       <span>Match</span>
       <div class="segmented-control race-segments">
         {#each RACE_TARGETS as target}
-          <button class:active={raceTo === target} type="button" onclick={() => (raceTo = target)}>
+          <button
+            class:active={raceTo === target}
+            type="button"
+            title={raceToDescription(target)}
+            aria-label={raceToDescription(target)}
+            onclick={() => (raceTo = target)}
+          >
             {raceToLabel(target)}
           </button>
         {/each}

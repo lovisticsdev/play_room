@@ -235,11 +235,22 @@
   color: var(--muted);
   background: transparent;
   font-weight: 800;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .segmented-control button.active {
   color: var(--cyan);
   background: rgba(21, 223, 234, 0.12);
+  box-shadow: inset 0 0 18px rgba(21, 223, 234, 0.08);
+}
+
+.segmented-control button:hover,
+.segmented-control button:focus-visible {
+  color: var(--cyan);
+  background: rgba(21, 223, 234, 0.08);
   box-shadow: inset 0 0 18px rgba(21, 223, 234, 0.08);
 }
 

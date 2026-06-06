@@ -22,6 +22,12 @@ export function raceToLabel(targetScore: number): string {
   return `Race to ${targetScore}`;
 }
 
+export function raceToDescription(targetScore: number): string {
+  const points = targetScore === 1 ? 'point' : 'points';
+
+  return `Race to ${targetScore}: first player to ${targetScore} ${points} wins.`;
+}
+
 export function roundLabel(round: number, phase: RoomPhase): string {
   const currentRound = phase.phase === 'lobby' ? round + 1 : phase.phase === 'in_round' ? phase.round : round;
 
@@ -30,6 +36,12 @@ export function roundLabel(round: number, phase: RoomPhase): string {
 
 export function gameLabel(game: GameKind): string {
   return game === 'rock_paper_scissors' ? 'RPS' : 'RPSLS';
+}
+
+export function gameDescription(game: GameKind): string {
+  return game === 'rock_paper_scissors'
+    ? 'RPS: Rock, Paper, Scissors.'
+    : 'RPSLS: Rock, Paper, Scissors, Lizard, Spock.';
 }
 
 export function phaseLabel(phase: RoomPhase): string {

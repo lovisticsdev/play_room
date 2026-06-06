@@ -22,7 +22,7 @@
 
 .room-header {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 140px minmax(240px, 1.1fr) auto;
+  grid-template-columns: minmax(180px, 1fr) max-content minmax(240px, 1.1fr) auto;
   align-items: center;
   gap: 24px;
   margin-bottom: 24px;
@@ -54,6 +54,10 @@
   color: var(--muted);
 }
 
+.room-round-block small {
+  white-space: nowrap;
+}
+
 .race-control {
   display: inline-flex;
   flex-wrap: wrap;
@@ -69,12 +73,25 @@
   color: var(--muted);
   background: rgba(2, 8, 13, 0.48);
   font-weight: 900;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
 }
 
 .race-control button.active {
   border-color: rgba(21, 223, 234, 0.8);
   color: var(--ink);
   background: linear-gradient(180deg, var(--cyan), #0bb4c8);
+}
+
+.race-control button:not(:disabled):hover,
+.race-control button:not(:disabled):focus-visible {
+  border-color: var(--line-bright);
+  color: var(--cyan);
+  background: rgba(21, 223, 234, 0.12);
+  transform: translateY(-1px);
 }
 
 .race-control button:disabled {
@@ -452,4 +469,3 @@
 .spectators-dock .panel-body {
   padding: 12px 14px 14px;
 }
-
