@@ -72,6 +72,7 @@ fn render_response(request_id: u64, result: &ServerResult) {
 fn render_event(event: &ServerEvent) {
     match event {
         ServerEvent::Notice { message } => println!("[notice] {message}"),
+        ServerEvent::SessionReplaced { message } => println!("[session replaced] {message}"),
         ServerEvent::RoomEvent { room_id, event } => match event {
             RoomEvent::PlayerJoined { name, role, .. } => {
                 println!("[{room_id}] {name} joined as {role:?}")

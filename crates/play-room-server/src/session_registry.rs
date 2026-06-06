@@ -1,6 +1,7 @@
-use crate::broadcast::OutboundTx;
+use crate::broadcast::{self, OutboundTx};
 use crate::identity::{new_player_id, new_session_token};
 use play_room_core::{CoreError, PlayerId, SessionToken};
+use play_room_protocol::{ServerEvent, ServerMessage};
 use std::collections::{BTreeMap, BTreeSet};
 
 const FALLBACK_DISPLAY_NAME: &str = "Guest";
@@ -40,7 +41,17 @@ impl SessionRegistry {
         if let Some(token) = token {
             if let Some(player_id) = self.tokens.get(&token).cloned() {
                 let connection_id = self.next_connection_id();
-                self.sessions.insert(player_id.clone(), tx);
+                if let Some(previous_tx) = self.sessions.insert(player_id.clone(), tx) {
+                    let _ = broadcast::send(
+                        &previous_tx,
+                        ServerMessage::Event {
+                            event: ServerEvent::SessionReplaced {
+                                message: "This session was opened in another tab or client."
+                                    .to_owned(),
+                            },
+                        },
+                    );
+                }
                 self.connection_ids.insert(player_id.clone(), connection_id);
                 self.disconnected_at_ms.remove(&player_id);
                 self.player_names
@@ -203,6 +214,7 @@ fn normalize_display_name(name: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use play_room_protocol::{ServerEvent, ServerMessage};
 
     #[test]
     fn known_token_reconnects_same_identity() {
@@ -247,6 +259,32 @@ mod tests {
         assert!(registry.disconnect_socket(&second.player_id, second.connection_id, 2_000));
         assert_eq!(registry.active_count(), 0);
     }
+
+    #[test]
+    fn active_reconnect_notifies_replaced_socket() {
+        let (first_tx, mut first_rx) = crate::broadcast::channel();
+        let (second_tx, _) = crate::broadcast::channel();
+        let mut registry = SessionRegistry::default();
+        let first = registry.connect("Alice".to_owned(), None, first_tx);
+        let second = registry.connect(
+            String::new(),
+            Some(first.reconnect_token.clone()),
+            second_tx,
+        );
+
+        let message = first_rx
+            .try_recv()
+            .expect("replaced socket should receive a session replacement event");
+
+        assert_eq!(second.player_id, first.player_id);
+        assert!(matches!(
+            message,
+            ServerMessage::Event {
+                event: ServerEvent::SessionReplaced { .. }
+            }
+        ));
+    }
+
     #[test]
     fn unknown_token_creates_new_identity_and_replaces_token() {
         let (tx, _) = crate::broadcast::channel();

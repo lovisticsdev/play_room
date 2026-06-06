@@ -513,6 +513,9 @@ class PlayRoomClient {
       case 'notice':
         eventLogStore.push('info', event.message, event);
         break;
+      case 'session_replaced':
+        this.handleSessionReplaced(event.message);
+        break;
       case 'room_snapshot':
         currentRoomStore.setRoom(event.room);
         roomsStore.upsertFromSnapshot(event.room);
@@ -547,6 +550,20 @@ class PlayRoomClient {
         break;
       }
     }
+  }
+
+  private handleSessionReplaced(message: string): void {
+    this.cancelReconnect();
+    this.stopRoomPolling();
+    this.manualClose = true;
+    this.socket.close(new Error(message));
+    clearReconnectToken();
+    sessionStore.clear();
+    roomsStore.clear();
+    this.clearRoomPresence();
+    connectionStore.setDisconnected();
+    uiStore.openRoomsModal('join');
+    eventLogStore.push('warning', message);
   }
 
   private syncLocalDisplayName(room: RoomSnapshot): void {

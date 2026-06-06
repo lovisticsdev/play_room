@@ -1120,6 +1120,24 @@ export const SERVER_MESSAGE_SCHEMA = {
         {
           "type": "object",
           "required": [
+            "message",
+            "type"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "session_replaced"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
             "event",
             "room_id",
             "type"

@@ -150,6 +150,7 @@ export type ServerResult =
 
 export type ServerEvent =
   | { type: 'notice'; message: string }
+  | { type: 'session_replaced'; message: string }
   | { type: 'room_event'; room_id: RoomId; event: RoomEvent }
   | { type: 'room_snapshot'; room: RoomSnapshot };
 

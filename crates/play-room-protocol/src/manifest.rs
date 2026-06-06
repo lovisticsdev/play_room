@@ -203,6 +203,7 @@ export type ServerResult =
 
 export type ServerEvent =
   | { type: 'notice'; message: string }
+  | { type: 'session_replaced'; message: string }
   | { type: 'room_event'; room_id: RoomId; event: RoomEvent }
   | { type: 'room_snapshot'; room: RoomSnapshot };
 
@@ -546,6 +547,12 @@ fn server_event_types() -> Vec<String> {
         tagged_value(
             &ServerEvent::Notice {
                 message: "hello".to_owned(),
+            },
+            "type",
+        ),
+        tagged_value(
+            &ServerEvent::SessionReplaced {
+                message: "session replaced".to_owned(),
             },
             "type",
         ),

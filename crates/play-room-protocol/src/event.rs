@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum ServerEvent {
     Notice { message: String },
+    SessionReplaced { message: String },
     RoomEvent { room_id: RoomId, event: RoomEvent },
     RoomSnapshot { room: RoomSnapshot },
 }
