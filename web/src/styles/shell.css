@@ -55,8 +55,7 @@
   gap: 10px;
 }
 
-.icon-button,
-.token-button,
+.identity-icon-button,
 .copy-code,
 .modal-close {
   border: 1px solid var(--line);
@@ -69,8 +68,8 @@
   min-height: 42px;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
+  gap: 9px;
+  padding: 4px 6px 4px 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(2, 7, 13, 0.72);
@@ -78,11 +77,15 @@
 }
 
 .identity-chip {
-  max-width: min(300px, 24vw);
+  max-width: min(360px, 48vw);
 }
 
-.identity-chip > span {
+.identity-name {
+  flex: 1 1 auto;
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -94,6 +97,7 @@
 }
 
 .status-dot {
+  flex: 0 0 auto;
   width: 10px;
   height: 10px;
   border-radius: 999px;
@@ -119,6 +123,7 @@
 }
 
 .identity-avatar {
+  flex: 0 0 auto;
   width: 34px;
   height: 34px;
   display: grid;
@@ -130,18 +135,42 @@
   font-weight: 900;
 }
 
-.token-button {
-  min-height: 42px;
-  padding: 0 18px;
-  color: var(--cyan);
-  font-weight: 900;
-  white-space: nowrap;
+.identity-controls {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 2px;
 }
 
-.icon-button {
-  width: 42px;
-  height: 42px;
+.identity-icon-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--cyan);
+  font-weight: 900;
+  line-height: 1;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.identity-icon-button:hover {
+  border-color: var(--line-bright);
+  background: rgba(21, 223, 234, 0.1);
+  transform: translateY(-1px);
+}
+
+.identity-icon-button.danger {
   color: var(--coral);
+}
+
+.identity-icon-button.danger:hover {
+  border-color: rgba(255, 79, 111, 0.68);
+  background: rgba(255, 79, 111, 0.1);
 }
 
 .app-layout {
@@ -150,4 +179,3 @@
   gap: 10px;
   margin-top: 12px;
 }
-

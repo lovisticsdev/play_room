@@ -37,17 +37,33 @@
 
   <div class="top-actions">
     <div class="identity-chip {status}">
-      <span class="status-dot"></span>
       <div class="identity-avatar">{$sessionStore.displayName?.[0]?.toUpperCase() ?? 'G'}</div>
-      <span>{$sessionStore.displayName ?? 'Guest'}</span>
+      <span class="identity-name"><span class="status-dot"></span>{$sessionStore.displayName ?? 'Guest'}</span>
+      <span class="identity-controls">
+        {#if $sessionStore.reconnectToken}
+          <button
+            class="identity-icon-button"
+            type="button"
+            onclick={copyToken}
+            title={copied ? 'Reconnect token copied' : 'Copy reconnect token'}
+            aria-label={copied ? 'Reconnect token copied' : 'Copy reconnect token'}
+          >
+            {copied ? '✓' : '⧉'}
+          </button>
+        {/if}
+
+        {#if status === 'connected'}
+          <button
+            class="identity-icon-button danger"
+            type="button"
+            onclick={() => playRoomClient.disconnect()}
+            title="Disconnect"
+            aria-label="Disconnect"
+          >
+            ⏻
+          </button>
+        {/if}
+      </span>
     </div>
-
-    {#if $sessionStore.reconnectToken}
-      <button class="token-button" type="button" onclick={copyToken}>{copied ? 'Copied' : 'Copy Reconnect Token'} <span>⧉</span></button>
-    {/if}
-
-    {#if status === 'connected'}
-      <button class="icon-button" type="button" onclick={() => playRoomClient.disconnect()} title="Disconnect" aria-label="Disconnect">⏻</button>
-    {/if}
   </div>
 </header>
