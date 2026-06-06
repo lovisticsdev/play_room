@@ -743,9 +743,9 @@ fn expired_player_reconnects_as_spectator() {
 
     let (tx, _) = crate::broadcast::channel();
     let reconnected = manager.connect(String::new(), Some(alice.reconnect_token.clone()), tx);
-    let room = manager.rooms.get(&room_id).unwrap();
-    let alice_view = room
-        .snapshot()
+    let alice_view = manager
+        .room_snapshot(&room_id)
+        .unwrap()
         .players
         .into_iter()
         .find(|player| player.id == alice.player_id)
@@ -776,9 +776,9 @@ fn seat_expiry_is_ignored_after_reconnect() {
     manager.connect(String::new(), Some(alice.reconnect_token.clone()), tx);
 
     let outcome = manager.expire_participant_seat(&expiry).unwrap();
-    let room = manager.rooms.get(&room_id).unwrap();
-    let alice_view = room
-        .snapshot()
+    let alice_view = manager
+        .room_snapshot(&room_id)
+        .unwrap()
         .players
         .into_iter()
         .find(|player| player.id == alice.player_id)
@@ -1091,9 +1091,9 @@ fn saturated_participant_socket_marks_player_disconnected_and_schedules_seat_exp
     ));
     let outcomes = manager.flush_messages(messages, 10_000);
 
-    let room = manager.rooms.get(&room_id).unwrap();
-    let alice_view = room
-        .snapshot()
+    let alice_view = manager
+        .room_snapshot(&room_id)
+        .unwrap()
         .players
         .into_iter()
         .find(|player| player.id == alice.player_id)
@@ -1102,6 +1102,13 @@ fn saturated_participant_socket_marks_player_disconnected_and_schedules_seat_exp
 
     assert!(!alice_view.connected);
     assert!(outcome.seat_expiry.is_some());
+    assert_eq!(
+        alice_view.participant_seat_expires_at_ms,
+        outcome
+            .seat_expiry
+            .as_ref()
+            .map(|expiry| expiry.expires_at_ms)
+    );
     assert!(outcome.spectator_expiry.is_none());
     assert!(outcome.messages.iter().any(|(_, message)| matches!(
         message,
@@ -1133,9 +1140,9 @@ fn saturated_spectator_socket_marks_player_disconnected_and_schedules_name_expir
     ));
     let outcomes = manager.flush_messages(messages, 10_000);
 
-    let room = manager.rooms.get(&room_id).unwrap();
-    let mira_view = room
-        .snapshot()
+    let mira_view = manager
+        .room_snapshot(&room_id)
+        .unwrap()
         .players
         .into_iter()
         .find(|player| player.id == mira.player_id)
@@ -1146,6 +1153,13 @@ fn saturated_spectator_socket_marks_player_disconnected_and_schedules_name_expir
     assert!(!mira_view.connected);
     assert!(outcome.seat_expiry.is_none());
     assert!(outcome.spectator_expiry.is_some());
+    assert_eq!(
+        mira_view.spectator_expires_at_ms,
+        outcome
+            .spectator_expiry
+            .as_ref()
+            .map(|expiry| expiry.expires_at_ms)
+    );
 }
 
 #[test]

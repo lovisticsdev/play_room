@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn two_player_room() -> GameRoom {

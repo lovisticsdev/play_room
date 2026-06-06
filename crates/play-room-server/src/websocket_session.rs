@@ -118,7 +118,12 @@ pub async fn handle_websocket_connection(
                     break;
                 };
                 match encode_server(&message) {
-                    Ok(line) => websocket.send(Message::Text(line.into())).await?,
+                    Ok(line) => {
+                        if let Err(err) = websocket.send(Message::Text(line.into())).await {
+                            warn!(?err, "websocket send failed");
+                            break;
+                        }
+                    }
                     Err(err) => warn!(?err, "failed to encode server message"),
                 }
             }
