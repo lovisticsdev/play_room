@@ -1,5 +1,5 @@
 import type { PlayerId, PlayerView, RoomPhase, RoomSnapshot, RoomSummary, RoundOutcome } from '../protocol/types';
-import { bestOfLabel, gameLabel, isFinished, isInRound } from '../protocol/rules';
+import { gameLabel, isFinished, isInRound, raceToLabel } from '../protocol/rules';
 
 export type RoomAction = 'current' | 'join' | 'watch';
 
@@ -37,7 +37,7 @@ export function roomPhaseTag(phase: RoomPhase): string {
 }
 
 export function roomSummaryMeta(room: RoomSummary): string {
-  return `${bestOfLabel(room.target_score)} · ${gameLabel(room.game)}`;
+  return `${raceToLabel(room.target_score)} · ${gameLabel(room.game)}`;
 }
 
 export function roundCountdownDeadline(phase: RoomPhase): number | null {

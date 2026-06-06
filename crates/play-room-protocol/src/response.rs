@@ -31,6 +31,7 @@ pub enum ServerResult {
     },
     Welcome {
         player_id: PlayerId,
+        display_name: String,
         reconnect_token: SessionToken,
         protocol_version: u16,
         reconnected: bool,

@@ -13,6 +13,7 @@ export type SessionToken = Id;
 export type GameKind = ProtocolValues['game_kinds'][number];
 export type Move = ProtocolValues['moves'][number];
 export type PlayerRole = ProtocolValues['player_roles'][number];
+export type EnterRoomMode = ProtocolValues['enter_room_modes'][number];
 export type ErrorCode = ProtocolValues['error_codes'][number];
 export type RoundEndReason = ProtocolValues['round_end_reasons'][number];
 
@@ -88,6 +89,8 @@ export type RoomEvent =
   | { event: 'player_left'; player_id: PlayerId }
   | { event: 'player_disconnected'; player_id: PlayerId }
   | { event: 'player_reconnected'; player_id: PlayerId }
+  | { event: 'player_renamed'; player_id: PlayerId; name: string }
+  | { event: 'match_format_changed'; target_score: number }
   | { event: 'ready_changed'; player_id: PlayerId; ready: boolean }
   | { event: 'role_changed'; player_id: PlayerId; role: PlayerRole }
   | { event: 'round_started'; round: number; deadline_ms: number }
@@ -103,6 +106,9 @@ export type ClientRequest =
   | { type: 'create_room'; name: string; rules: GameRules | null }
   | { type: 'join_room'; room_id: RoomId }
   | { type: 'spectate_room'; room_id: RoomId }
+  | { type: 'enter_room'; room_id: RoomId; mode: EnterRoomMode }
+  | { type: 'update_display_name'; name: string }
+  | { type: 'update_match_format'; target_score: number }
   | { type: 'leave_room' }
   | { type: 'start_next_match' }
   | { type: 'set_ready'; ready: boolean }
@@ -117,6 +123,7 @@ export interface ClientEnvelope {
 
 export interface WelcomeState {
   player_id: PlayerId;
+  display_name: string;
   reconnect_token: SessionToken;
   protocol_version: number;
   reconnected: boolean;
@@ -130,6 +137,7 @@ export type ServerResult =
   | {
       status: 'welcome';
       player_id: PlayerId;
+      display_name: string;
       reconnect_token: SessionToken;
       protocol_version: number;
       reconnected: boolean;

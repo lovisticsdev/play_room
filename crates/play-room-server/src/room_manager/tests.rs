@@ -68,6 +68,110 @@ fn can_spectate_a_full_room_by_exact_name() {
 }
 
 #[test]
+fn auto_enter_open_room_joins_as_participant() {
+    let mut manager = RoomManager::default();
+    let alice = connect_named(&mut manager, "Alice");
+    let bob = connect_named(&mut manager, "Bob");
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "testroom".to_owned(), None)
+        .unwrap();
+
+    let messages = manager
+        .enter_room(
+            &bob.player_id,
+            &RoomId::new("testroom"),
+            EnterRoomMode::Auto,
+        )
+        .unwrap();
+    let room = manager.rooms.get(&room_id).unwrap();
+    let bob_view = room
+        .snapshot()
+        .players
+        .into_iter()
+        .find(|player| player.id == bob.player_id)
+        .unwrap();
+
+    assert!(!messages.is_empty());
+    assert_eq!(bob_view.role, PlayerRole::Participant);
+}
+
+#[test]
+fn auto_enter_full_room_spectates() {
+    let mut manager = RoomManager::default();
+    let alice = connect_named(&mut manager, "Alice");
+    let bob = connect_named(&mut manager, "Bob");
+    let mira = connect_named(&mut manager, "Mira");
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "testroom".to_owned(), None)
+        .unwrap();
+    manager.join_room(&bob.player_id, &room_id).unwrap();
+
+    let messages = manager
+        .enter_room(&mira.player_id, &room_id, EnterRoomMode::Auto)
+        .unwrap();
+    let room = manager.rooms.get(&room_id).unwrap();
+    let mira_view = room
+        .snapshot()
+        .players
+        .into_iter()
+        .find(|player| player.id == mira.player_id)
+        .unwrap();
+
+    assert!(!messages.is_empty());
+    assert_eq!(mira_view.role, PlayerRole::Spectator);
+}
+
+#[test]
+fn auto_enter_active_match_spectates() {
+    let mut manager = RoomManager::default();
+    let alice = connect_named(&mut manager, "Alice");
+    let bob = connect_named(&mut manager, "Bob");
+    let mira = connect_named(&mut manager, "Mira");
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "testroom".to_owned(), None)
+        .unwrap();
+    manager.join_room(&bob.player_id, &room_id).unwrap();
+    manager
+        .apply_to_current_room(
+            &alice.player_id,
+            RoomCommand::SetReady {
+                player_id: alice.player_id.clone(),
+                ready: true,
+                now_ms: 1_000,
+            },
+        )
+        .unwrap();
+    manager
+        .apply_to_current_room(
+            &bob.player_id,
+            RoomCommand::SetReady {
+                player_id: bob.player_id.clone(),
+                ready: true,
+                now_ms: 1_000,
+            },
+        )
+        .unwrap();
+
+    let messages = manager
+        .enter_room(
+            &mira.player_id,
+            &RoomId::new("TESTROOM"),
+            EnterRoomMode::Auto,
+        )
+        .unwrap();
+    let room = manager.rooms.get(&room_id).unwrap();
+    let mira_view = room
+        .snapshot()
+        .players
+        .into_iter()
+        .find(|player| player.id == mira.player_id)
+        .unwrap();
+
+    assert!(!messages.is_empty());
+    assert_eq!(mira_view.role, PlayerRole::Spectator);
+}
+
+#[test]
 fn duplicate_disconnected_player_name_is_rejected_with_clear_message() {
     let mut manager = RoomManager::default();
     let (alice_tx, _) = crate::broadcast::channel();
@@ -101,6 +205,84 @@ fn duplicate_connected_player_name_is_rejected_with_suggestions() {
 
     assert_eq!(err.code(), Some(&ErrorCode::PlayerNameExists));
     assert_eq!(err.suggestions(), ["Alice-2", "Alice-3", "Alice-4"]);
+}
+
+#[test]
+fn update_display_name_renames_session_and_current_room() {
+    let mut manager = RoomManager::default();
+    let alice = connect_named(&mut manager, "Alice");
+    let bob = connect_named(&mut manager, "Bob");
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "testroom".to_owned(), None)
+        .unwrap();
+    manager.join_room(&bob.player_id, &room_id).unwrap();
+
+    let messages = manager
+        .update_display_name(&bob.player_id, "  Bobby  ".to_owned())
+        .unwrap();
+    let bob_view = manager
+        .rooms
+        .get(&room_id)
+        .unwrap()
+        .snapshot()
+        .players
+        .into_iter()
+        .find(|player| player.id == bob.player_id)
+        .unwrap();
+
+    assert_eq!(
+        manager.session_registry.player_name(&bob.player_id),
+        Some("Bobby")
+    );
+    assert_eq!(bob_view.name, "Bobby");
+    assert!(has_room_event(
+        &messages,
+        &alice.player_id,
+        &room_id,
+        |event| matches!(
+            event,
+            RoomEvent::PlayerRenamed { player_id, name }
+                if *player_id == bob.player_id && name == "Bobby"
+        )
+    ));
+}
+
+#[test]
+fn update_display_name_rejects_duplicate_current_room_name() {
+    let mut manager = RoomManager::default();
+    let alice = connect_named(&mut manager, "Alice");
+    let bob = connect_named(&mut manager, "Bob");
+    let (room_id, _) = manager
+        .create_room(&alice.player_id, "testroom".to_owned(), None)
+        .unwrap();
+    manager.join_room(&bob.player_id, &room_id).unwrap();
+
+    let err = manager
+        .update_display_name(&bob.player_id, " alice ".to_owned())
+        .unwrap_err();
+
+    assert_eq!(err.code(), Some(&ErrorCode::PlayerNameExists));
+    assert_eq!(err.suggestions(), ["Alice-2", "Alice-3", "Alice-4"]);
+    assert_eq!(
+        manager.session_registry.player_name(&bob.player_id),
+        Some("Bob")
+    );
+}
+
+#[test]
+fn update_display_name_without_room_updates_retained_session_name() {
+    let mut manager = RoomManager::default();
+    let alice = connect_named(&mut manager, "Alice");
+
+    let messages = manager
+        .update_display_name(&alice.player_id, "Alicia".to_owned())
+        .unwrap();
+
+    assert!(messages.is_empty());
+    assert_eq!(
+        manager.session_registry.player_name(&alice.player_id),
+        Some("Alicia")
+    );
 }
 
 fn has_room_event(

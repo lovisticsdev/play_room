@@ -34,6 +34,10 @@ export function formatRoomEvent(event: RoomEvent, room: RoomSnapshot | null): st
     }
     case 'player_reconnected':
       return `${nameForPlayer(room, event.player_id)} reconnected`;
+    case 'player_renamed':
+      return `${nameForPlayer(room, event.player_id)} is now ${event.name}`;
+    case 'match_format_changed':
+      return `Match format changed to Race to ${event.target_score}`;
     case 'ready_changed':
       return `${nameForPlayer(room, event.player_id)} is ${event.ready ? 'ready' : 'not ready'}`;
     case 'role_changed': {

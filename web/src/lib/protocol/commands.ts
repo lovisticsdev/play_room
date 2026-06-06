@@ -1,4 +1,4 @@
-import type { ClientRequest, GameRules, Move, RoomId, SessionToken } from './types';
+import type { ClientRequest, EnterRoomMode, GameRules, Move, RoomId, SessionToken } from './types';
 import { defaultRules } from './rules';
 
 function normalizeOptional(value: string | null | undefined): SessionToken | null {
@@ -36,6 +36,18 @@ export function joinRoomRequest(roomId: RoomId): ClientRequest {
 
 export function spectateRoomRequest(roomId: RoomId): ClientRequest {
   return { type: 'spectate_room', room_id: roomId.trim() };
+}
+
+export function enterRoomRequest(roomId: RoomId, mode: EnterRoomMode = 'auto'): ClientRequest {
+  return { type: 'enter_room', room_id: roomId.trim(), mode };
+}
+
+export function updateDisplayNameRequest(name: string): ClientRequest {
+  return { type: 'update_display_name', name: name.trim() };
+}
+
+export function updateMatchFormatRequest(targetScore: number): ClientRequest {
+  return { type: 'update_match_format', target_score: targetScore };
 }
 
 export function leaveRoomRequest(): ClientRequest {

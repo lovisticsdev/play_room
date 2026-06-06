@@ -29,7 +29,7 @@
     formError = null;
 
     try {
-      await playRoomClient.connect(serverUrl, displayName, reconnectToken);
+      await playRoomClient.connect(serverUrl, '', reconnectToken);
     } catch (error) {
       formError = error instanceof Error ? error.message : 'Reconnect failed';
     }

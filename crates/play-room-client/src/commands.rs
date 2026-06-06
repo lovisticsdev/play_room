@@ -39,6 +39,31 @@ pub fn parse_command(input: &str) -> Result<Option<ClientRequest>, ClientError> 
             }))
         }
         "/leave" => Ok(Some(ClientRequest::LeaveRoom)),
+        "/name" => {
+            let name = parts.collect::<Vec<_>>().join(" ");
+            if name.is_empty() {
+                return Err(ClientError::InvalidCommand(
+                    "usage: /name <display name>".to_owned(),
+                ));
+            }
+            Ok(Some(ClientRequest::UpdateDisplayName { name }))
+        }
+        "/race" => {
+            let Some(value) = parts.next() else {
+                return Err(ClientError::InvalidCommand(
+                    "usage: /race <points>".to_owned(),
+                ));
+            };
+            let target_score = value.parse::<u32>().map_err(|_| {
+                ClientError::InvalidCommand("race target must be a positive number".to_owned())
+            })?;
+            if target_score == 0 {
+                return Err(ClientError::InvalidCommand(
+                    "race target must be at least 1".to_owned(),
+                ));
+            }
+            Ok(Some(ClientRequest::UpdateMatchFormat { target_score }))
+        }
         "/again" | "/next" => Ok(Some(ClientRequest::StartNextMatch)),
         "/ready" => Ok(Some(ClientRequest::SetReady { ready: true })),
         "/unready" => Ok(Some(ClientRequest::SetReady { ready: false })),
@@ -84,6 +109,8 @@ fn print_help() {
     println!("  /create <room name>");
     println!("  /join <room_id|room_name>");
     println!("  /leave");
+    println!("  /name <display name>");
+    println!("  /race <points>");
     println!("  /again | /next");
     println!("  /ready | /unready");
     println!("  /move <rock|paper|scissors|lizard|spock>");

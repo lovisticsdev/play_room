@@ -10,7 +10,9 @@ use play_room_core::{
     CoreError, GameRules, PlayerId, PlayerRole, RoomCommand, RoomEvent, RoomId, RoomSnapshot,
     RoomSummary, SessionToken,
 };
-use play_room_protocol::{ErrorCode, ServerEvent, ServerMessage, ServerResult, PROTOCOL_VERSION};
+use play_room_protocol::{
+    EnterRoomMode, ErrorCode, ServerEvent, ServerMessage, ServerResult, PROTOCOL_VERSION,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 const DEFAULT_MAX_ROOMS: usize = 128;
@@ -346,6 +348,9 @@ impl RoomManager {
             request_id,
             ServerResult::Welcome {
                 player_id: connected.player_id.clone(),
+                display_name: self
+                    .session_registry
+                    .player_name_or_id(&connected.player_id),
                 reconnect_token: connected.reconnect_token.clone(),
                 protocol_version: PROTOCOL_VERSION,
                 reconnected: connected.reconnected,
@@ -415,6 +420,75 @@ impl RoomManager {
         self.join_room_as(player_id, room_id_or_name, PlayerRole::Spectator)
     }
 
+    pub fn enter_room(
+        &mut self,
+        player_id: &PlayerId,
+        room_id_or_name: &RoomId,
+        mode: EnterRoomMode,
+    ) -> Result<OutboundMessages, RoomManagerError> {
+        let role = match mode {
+            EnterRoomMode::Participant => PlayerRole::Participant,
+            EnterRoomMode::Spectator => PlayerRole::Spectator,
+            EnterRoomMode::Auto => self.auto_enter_role(player_id, room_id_or_name)?,
+        };
+
+        self.join_room_as(player_id, room_id_or_name, role)
+    }
+
+    pub fn update_display_name(
+        &mut self,
+        player_id: &PlayerId,
+        name: String,
+    ) -> Result<OutboundMessages, RoomManagerError> {
+        let display_name = name.trim().to_owned();
+        if display_name.is_empty() {
+            return Err(RoomManagerError::from_core(CoreError::EmptyName));
+        }
+
+        let Some(room_id) = self.room_memberships.room_for(player_id).cloned() else {
+            self.session_registry
+                .rename_player(player_id, display_name)
+                .map_err(RoomManagerError::from_core)?;
+            return Ok(Vec::new());
+        };
+
+        let room = self
+            .rooms
+            .get(&room_id)
+            .ok_or_else(|| RoomManagerError::room_not_found(&room_id))?;
+        if let Some(conflict) = room_lifecycle::player_name_conflict(room, player_id, &display_name)
+        {
+            return Err(RoomManagerError::duplicate_player_name(
+                conflict.name.clone(),
+                Some(conflict.connected),
+                room_lifecycle::suggest_player_names(room, &conflict.name),
+            ));
+        }
+
+        let mut probe = room.clone();
+        probe
+            .apply(RoomCommand::RenamePlayer {
+                player_id: player_id.clone(),
+                name: display_name.clone(),
+            })
+            .map_err(RoomManagerError::from_core)?;
+        self.session_registry
+            .rename_player(player_id, display_name.clone())
+            .map_err(RoomManagerError::from_core)?;
+
+        let room = self
+            .rooms
+            .get_mut(&room_id)
+            .ok_or_else(|| RoomManagerError::room_not_found(&room_id))?;
+        let events = room
+            .apply(RoomCommand::RenamePlayer {
+                player_id: player_id.clone(),
+                name: display_name,
+            })
+            .map_err(RoomManagerError::from_core)?;
+        Ok(self.room_messages(&room_id, events))
+    }
+
     fn join_room_as(
         &mut self,
         player_id: &PlayerId,
@@ -466,6 +540,53 @@ impl RoomManager {
             .set_room(player_id.clone(), room_id.clone());
         messages.extend(self.room_messages(&room_id, events));
         Ok(messages)
+    }
+
+    fn auto_enter_role(
+        &self,
+        player_id: &PlayerId,
+        room_id_or_name: &RoomId,
+    ) -> Result<PlayerRole, RoomManagerError> {
+        let room_id = self
+            .rooms
+            .resolve_room_id(room_id_or_name)
+            .map_err(RoomManagerError::from_room_lookup)?;
+        let player_name = self.session_registry.player_name_or_id(player_id);
+        let room = self
+            .rooms
+            .get(&room_id)
+            .ok_or_else(|| RoomManagerError::room_not_found(&room_id))?;
+
+        if let Some(conflict) = room_lifecycle::player_name_conflict(room, player_id, &player_name)
+        {
+            return Err(RoomManagerError::duplicate_player_name(
+                conflict.name.clone(),
+                Some(conflict.connected),
+                room_lifecycle::suggest_player_names(room, &conflict.name),
+            ));
+        }
+
+        let participant = room_lifecycle::player_for_role(
+            player_id,
+            player_name.clone(),
+            PlayerRole::Participant,
+        );
+        let mut participant_probe = room.clone();
+        match participant_probe.apply(RoomCommand::Join {
+            player: participant,
+        }) {
+            Ok(_) => Ok(PlayerRole::Participant),
+            Err(CoreError::RoomFull | CoreError::MatchInProgress) => {
+                let spectator =
+                    room_lifecycle::player_for_role(player_id, player_name, PlayerRole::Spectator);
+                let mut spectator_probe = room.clone();
+                spectator_probe
+                    .apply(RoomCommand::Join { player: spectator })
+                    .map_err(RoomManagerError::from_core)?;
+                Ok(PlayerRole::Spectator)
+            }
+            Err(error) => Err(RoomManagerError::from_core(error)),
+        }
     }
 
     pub fn leave_current_room(

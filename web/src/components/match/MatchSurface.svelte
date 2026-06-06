@@ -195,13 +195,16 @@
       </div>
     </div>
 
-    <div class="choose-divider"><span>{finished ? 'Final score' : spectatorMode ? 'Spectator view' : 'Choose your move'}</span></div>
-
-    {#if !finished && me?.role === 'participant'}
+    {#if finished}
+      <div class="choose-divider"><span>Final score</span></div>
+    {:else if activeRound && spectatorMode}
+      <div class="choose-divider"><span>Spectator view</span></div>
+    {:else if activeRound && me?.role === 'participant'}
+      <div class="choose-divider"><span>{lockedMove ? 'Move locked' : 'Choose your move'}</span></div>
       <MoveSelector moves={$allowedMoves} selectedMove={lockedMove} disabled={!canSubmit} onChoose={chooseMove} />
     {/if}
 
-    {#if lockedMove && !finished}
+    {#if lockedMove && activeRound && !finished}
       <div class="locked-banner">
         <div>
           <strong>Move locked</strong>

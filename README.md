@@ -10,7 +10,7 @@ The browser client is the primary user-facing experience. The terminal client re
 - Svelte + TypeScript web client for real-time room and game visualization
 - Terminal client with room, ready, move, spectator, and reconnect commands
 - Deterministic core room state machine
-- Best of 3 default two-player match flow with timed rounds and timeout resolution
+- Race to 2 default two-player match flow with timed rounds and timeout resolution
 - Immediate forfeit resolution when an active participant leaves or disconnects mid-match
 - Reconnect tokens with restored-room/stale-token metadata and stale socket-disconnect protection
 - 30-second participant seat protection after disconnect, followed by 60-second spectator name cleanup
@@ -146,6 +146,8 @@ Useful terminal commands:
 /create <room name>           create and join a room as host
 /join <room_id|room_name>     join an existing room by ID or exact name
 /leave                        leave the current room
+/name <display name>          update your display name
+/race <points>                update the Race to N target as current host
 /again | /next                reset a finished match as host
 /ready                        mark yourself ready
 /unready                      clear your ready state
@@ -191,7 +193,7 @@ Rooms move through:
 Lobby -> InRound -> Lobby -> ... -> Finished -> Lobby
 ```
 
-Default rooms are Best of 3, represented as `target_score = 2`, meaning the first participant to two round wins takes the match. Supported competitive rooms are exactly two active participants because the RPS/RPSLS resolver compares one participant against one opponent.
+Default rooms are Race to 2, represented as `target_score = 2`, meaning the first participant to two points takes the match. Draws and no-contests do not award points, so rounds can continue until a player reaches the room target. The current host can change the Race to N target before the first round or after a match has finished. Supported competitive rooms are exactly two active participants because the RPS/RPSLS resolver compares one participant against one opponent.
 
 Participants can join, leave, ready, unready, submit moves, and appear in the scoreboard. Spectators can watch room state but cannot submit moves and do not appear in competitive scores.
 
@@ -225,6 +227,8 @@ The same JSON envelope is available through two transports:
 - Browser clients send JSON in WebSocket text frames.
 
 Each client request carries a numeric `request_id`; responses echo that ID. Room updates are sent as room events and authoritative snapshots. Events explain what happened, while snapshots are the rendered source of truth.
+
+Browser room entry uses `enter_room` with `mode: "auto"` so the server atomically chooses participant or spectator. Open rooms seat the user as a participant; full rooms or rooms with an active match seat the user as a spectator when spectators are allowed. Direct `join_room` and `spectate_room` requests remain available for explicit terminal/debug flows.
 
 Move privacy is intentional: `move_accepted` identifies the player but does not reveal the selected move. Submitted moves are only exposed in the round result.
 

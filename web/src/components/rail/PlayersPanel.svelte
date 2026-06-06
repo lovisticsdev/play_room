@@ -24,7 +24,7 @@
 
   $: room = $currentRoomStore.room;
   $: spectatorList = spectators(room).sort((a, b) => a.name.localeCompare(b.name));
-  $: panelTitle = room ? `Spectators in ${room.name}` : 'Spectators';
+  $: panelTitle = 'Spectators';
 
   function statusTone(player: PlayerView): 'danger' | 'neutral' {
     if (!player.connected) return 'danger';
@@ -41,12 +41,12 @@
   }
 </script>
 
-<Panel title={panelTitle}>
+<Panel title={panelTitle} compact>
   {#if !room}
     <div class="empty-state compact">No room selected.</div>
   {:else}
     <div class="player-section-title">
-      <span>Spectators ({spectatorList.length})</span>
+      <span>{room.name} ({spectatorList.length})</span>
     </div>
 
     {#if spectatorList.length === 0}

@@ -19,6 +19,7 @@ function welcomeMessage(protocolVersion: number = PROTOCOL_VERSION) {
     result: {
       status: 'welcome',
       player_id: 'player-alice',
+      display_name: 'Alice',
       reconnect_token: 'session-alice',
       protocol_version: protocolVersion,
       reconnected: false,

@@ -20,6 +20,7 @@ function createSessionStore() {
     subscribe,
     setSession: (state: SessionState) => set(state),
     setDisplayName: (displayName: string | null) => update((state) => ({ ...state, displayName })),
+    updateDisplayName: (displayName: string) => update((state) => ({ ...state, displayName })),
     clear: () => set({ playerId: null, displayName: null, reconnectToken: null, protocolVersion: null }),
   };
 }

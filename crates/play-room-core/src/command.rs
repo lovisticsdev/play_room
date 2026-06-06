@@ -12,6 +12,14 @@ pub enum RoomCommand {
     Leave {
         player_id: PlayerId,
     },
+    RenamePlayer {
+        player_id: PlayerId,
+        name: String,
+    },
+    UpdateMatchFormat {
+        player_id: PlayerId,
+        target_score: u32,
+    },
     SetReady {
         player_id: PlayerId,
         ready: bool,

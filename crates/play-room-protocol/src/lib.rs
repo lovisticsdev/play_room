@@ -17,7 +17,7 @@ pub use manifest::{
     protocol_manifest, typescript_constants_module, typescript_types_module, ProtocolManifest,
 };
 pub use message::{ClientEnvelope, ServerMessage};
-pub use request::ClientRequest;
+pub use request::{ClientRequest, EnterRoomMode};
 pub use response::{ErrorCode, ServerResult};
 pub use schema::{client_envelope_schema, server_message_schema, typescript_schema_module};
 pub use version::PROTOCOL_VERSION;

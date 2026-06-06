@@ -127,6 +127,66 @@ export const CLIENT_ENVELOPE_SCHEMA = {
         {
           "type": "object",
           "required": [
+            "mode",
+            "room_id",
+            "type"
+          ],
+          "properties": {
+            "mode": {
+              "$ref": "#/definitions/EnterRoomMode"
+            },
+            "room_id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "enter_room"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "type"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "update_display_name"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "target_score",
+            "type"
+          ],
+          "properties": {
+            "target_score": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "update_match_format"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
             "type"
           ],
           "properties": {
@@ -220,6 +280,14 @@ export const CLIENT_ENVELOPE_SCHEMA = {
             }
           }
         }
+      ]
+    },
+    "EnterRoomMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "participant",
+        "spectator"
       ]
     },
     "GameKind": {
@@ -557,6 +625,48 @@ export const SERVER_MESSAGE_SCHEMA = {
             },
             "player_id": {
               "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "event",
+            "name",
+            "player_id"
+          ],
+          "properties": {
+            "event": {
+              "type": "string",
+              "enum": [
+                "player_renamed"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "player_id": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "event",
+            "target_score"
+          ],
+          "properties": {
+            "event": {
+              "type": "string",
+              "enum": [
+                "match_format_changed"
+              ]
+            },
+            "target_score": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
             }
           }
         },
@@ -1102,6 +1212,7 @@ export const SERVER_MESSAGE_SCHEMA = {
         {
           "type": "object",
           "required": [
+            "display_name",
             "player_id",
             "protocol_version",
             "reconnect_token",
@@ -1111,6 +1222,9 @@ export const SERVER_MESSAGE_SCHEMA = {
             "status"
           ],
           "properties": {
+            "display_name": {
+              "type": "string"
+            },
             "player_id": {
               "type": "string"
             },

@@ -4,38 +4,28 @@ import type { GameKind, GameRules, Move, PlayerId, RoomPhase } from './types';
 export const RPS_MOVES: Move[] = [...PROTOCOL_VALUES.rps_moves];
 export const RPSLS_MOVES: Move[] = [...PROTOCOL_VALUES.moves];
 
-export function defaultRules(game: GameKind = 'rock_paper_scissors_lizard_spock', bestOf: 3 | 5 = 3): GameRules {
+export const RACE_TARGETS = [1, 2, 3, 5] as const;
+export type RaceTarget = (typeof RACE_TARGETS)[number];
+
+export function defaultRules(game: GameKind = 'rock_paper_scissors_lizard_spock', targetScore: RaceTarget = 2): GameRules {
   return {
     game,
     min_players: 2,
     max_players: 2,
-    target_score: targetScoreForBestOf(bestOf),
+    target_score: targetScore,
     round_seconds: 15,
     allow_spectators: true,
   };
 }
 
-export function targetScoreForBestOf(bestOf: 3 | 5): number {
-  return bestOf === 5 ? 3 : 2;
+export function raceToLabel(targetScore: number): string {
+  return `Race to ${targetScore}`;
 }
 
-export function bestOfForTargetScore(targetScore: number): number {
-  return Math.max(1, targetScore * 2 - 1);
-}
+export function roundLabel(round: number, phase: RoomPhase): string {
+  const currentRound = phase.phase === 'lobby' ? round + 1 : phase.phase === 'in_round' ? phase.round : round;
 
-export function bestOfLabel(targetScore: number): string {
-  return `Best of ${bestOfForTargetScore(targetScore)}`;
-}
-
-export function roundProgressLabel(round: number, phase: RoomPhase, targetScore: number): string {
-  const maxRounds = bestOfForTargetScore(targetScore);
-  const currentRound = phase.phase === 'lobby'
-    ? Math.min(round + 1, maxRounds)
-    : phase.phase === 'in_round'
-      ? phase.round
-      : round;
-
-  return `Round ${Math.max(1, currentRound)}/${maxRounds}`;
+  return `Round ${Math.max(1, currentRound)}`;
 }
 
 export function gameLabel(game: GameKind): string {

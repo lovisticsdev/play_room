@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RoomSnapshot, RoundResult } from '../../lib/protocol/types';
-  import { bestOfLabel, moveLabel } from '../../lib/protocol/rules';
+  import { moveLabel } from '../../lib/protocol/rules';
   import { matchWinnerId, playerName, winnerId } from '../../lib/view/room-selectors';
 
   export let result: RoundResult | null = null;
@@ -23,7 +23,7 @@
 {#if room?.phase.phase === 'finished'}
   <div class="result-banner match-result">
     <div>
-      <span>{bestOfLabel(room.rules.target_score)}</span>
+      <span>Final score</span>
       <strong>{finalTitle}</strong>
     </div>
     <div class="submitted-moves final-scoreline">

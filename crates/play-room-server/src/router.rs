@@ -59,6 +59,33 @@ pub async fn route(
                 Err(error) => respond_error(&mut locked, &player_id, request_id, error),
             }
         }
+        ClientRequest::EnterRoom { room_id, mode } => {
+            let mut locked = manager.lock().await;
+            match locked.enter_room(&player_id, &room_id, mode) {
+                Ok(messages) => {
+                    locked.respond(&player_id, request_id, ServerResult::Ok);
+                    locked.flush_messages(messages);
+                }
+                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+            }
+        }
+        ClientRequest::UpdateDisplayName { name } => {
+            let mut locked = manager.lock().await;
+            match locked.update_display_name(&player_id, name) {
+                Ok(messages) => {
+                    locked.respond(&player_id, request_id, ServerResult::Ok);
+                    locked.flush_messages(messages);
+                }
+                Err(error) => respond_error(&mut locked, &player_id, request_id, error),
+            }
+        }
+        ClientRequest::UpdateMatchFormat { target_score } => {
+            let command = RoomCommand::UpdateMatchFormat {
+                player_id: player_id.clone(),
+                target_score,
+            };
+            apply_room_command(manager, player_id, request_id, command).await;
+        }
         ClientRequest::LeaveRoom => {
             let mut locked = manager.lock().await;
             match locked.leave_current_room(&player_id) {

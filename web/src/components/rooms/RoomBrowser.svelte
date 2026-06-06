@@ -11,6 +11,7 @@
   let error: string | null = null;
   let suggestions: string[] = [];
   let suggestionKind: 'room' | 'player' = 'room';
+  let suggestionBusy = false;
 
   $: currentRoomId = $currentRoomStore.room?.id ?? null;
   $: needle = query.trim().toLowerCase();
@@ -37,12 +38,34 @@
       }
     }
   }
+
+  async function retryWithDisplayName(suggestion: string) {
+    const code = query.trim();
+    if (!code || suggestionBusy) return;
+
+    suggestionBusy = true;
+    error = null;
+    suggestions = [];
+
+    try {
+      await playRoomClient.updateDisplayName(suggestion);
+      await playRoomClient.joinOrSpectateRoom(code);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Join failed';
+      if (isPlayRoomRequestError(err)) {
+        suggestions = err.suggestions;
+        suggestionKind = err.code === 'player_name_exists' ? 'player' : 'room';
+      }
+    } finally {
+      suggestionBusy = false;
+    }
+  }
 </script>
 
 <div class="room-browser">
   <form class="browser-toolbar" onsubmit={joinByCode}>
-    <TextInput id="room-search" bind:value={query} placeholder="Search rooms or enter code to join" />
-    <Button type="submit" variant="secondary" disabled={!query.trim()}>Join by Code</Button>
+    <TextInput id="room-search" bind:value={query} placeholder="Search rooms or enter code to join/watch" />
+    <Button type="submit" variant="secondary" disabled={!query.trim()}>Join / Watch</Button>
   </form>
 
   <div class="browser-meta-row">
@@ -59,15 +82,23 @@
   {#if suggestions.length > 0}
     <div class="form-warning">
       {#if suggestionKind === 'player'}
-        Try a different display name:
-        {#each suggestions as suggestion, index}
-          <span class="suggestion-pill">{suggestion}</span>{index < suggestions.length - 1 ? ',' : '.'}
-        {/each}
+        <span>Use a suggested display name:</span>
+        <span class="suggestion-list">
+          {#each suggestions as suggestion}
+            <button type="button" class="suggestion-pill" disabled={suggestionBusy} onclick={() => retryWithDisplayName(suggestion)}>
+              {suggestion}
+            </button>
+          {/each}
+        </span>
       {:else}
-        Try
-        {#each suggestions as suggestion, index}
-          <button type="button" onclick={() => (query = suggestion)}>{suggestion}</button>{index < suggestions.length - 1 ? ',' : '.'}
-        {/each}
+        <span>Use a suggested room name:</span>
+        <span class="suggestion-list">
+          {#each suggestions as suggestion}
+            <button type="button" class="suggestion-pill" onclick={() => (query = suggestion)}>
+              {suggestion}
+            </button>
+          {/each}
+        </span>
       {/if}
     </div>
   {/if}

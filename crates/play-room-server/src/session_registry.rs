@@ -1,6 +1,6 @@
 use crate::broadcast::OutboundTx;
 use crate::identity::{new_player_id, new_session_token};
-use play_room_core::{PlayerId, SessionToken};
+use play_room_core::{CoreError, PlayerId, SessionToken};
 use std::collections::{BTreeMap, BTreeSet};
 
 const FALLBACK_DISPLAY_NAME: &str = "Guest";
@@ -149,6 +149,22 @@ impl SessionRegistry {
             .unwrap_or_else(|| player_id.as_str().to_owned())
     }
 
+    pub fn rename_player(
+        &mut self,
+        player_id: &PlayerId,
+        name: String,
+    ) -> Result<String, CoreError> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(CoreError::EmptyName);
+        }
+        let Some(stored) = self.player_names.get_mut(player_id) else {
+            return Err(CoreError::PlayerNotFound(player_id.clone()));
+        };
+        *stored = trimmed.to_owned();
+        Ok(stored.clone())
+    }
+
     fn remove_identity(&mut self, player_id: &PlayerId) {
         self.sessions.remove(player_id);
         self.connection_ids.remove(player_id);
@@ -244,6 +260,34 @@ mod tests {
         assert!(!connected.reconnected);
         assert!(!connected.reconnect_token_replaced);
         assert_eq!(registry.player_name(&connected.player_id), Some("Guest"));
+    }
+
+    #[test]
+    fn connected_identity_can_be_renamed() {
+        let (tx, _) = crate::broadcast::channel();
+        let mut registry = SessionRegistry::default();
+        let connected = registry.connect("Alice".to_owned(), None, tx);
+
+        let renamed = registry
+            .rename_player(&connected.player_id, "  Alicia  ".to_owned())
+            .unwrap();
+
+        assert_eq!(renamed, "Alicia");
+        assert_eq!(registry.player_name(&connected.player_id), Some("Alicia"));
+    }
+
+    #[test]
+    fn rename_rejects_empty_name() {
+        let (tx, _) = crate::broadcast::channel();
+        let mut registry = SessionRegistry::default();
+        let connected = registry.connect("Alice".to_owned(), None, tx);
+
+        let err = registry
+            .rename_player(&connected.player_id, "  ".to_owned())
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::EmptyName);
+        assert_eq!(registry.player_name(&connected.player_id), Some("Alice"));
     }
 
     #[test]

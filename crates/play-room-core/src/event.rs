@@ -21,6 +21,13 @@ pub enum RoomEvent {
     PlayerReconnected {
         player_id: PlayerId,
     },
+    PlayerRenamed {
+        player_id: PlayerId,
+        name: String,
+    },
+    MatchFormatChanged {
+        target_score: u32,
+    },
     ReadyChanged {
         player_id: PlayerId,
         ready: bool,

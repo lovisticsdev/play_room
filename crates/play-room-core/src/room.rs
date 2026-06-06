@@ -77,6 +77,11 @@ impl GameRoom {
         match command {
             RoomCommand::Join { player } => self.join(player),
             RoomCommand::Leave { player_id } => self.leave(&player_id),
+            RoomCommand::RenamePlayer { player_id, name } => self.rename_player(&player_id, name),
+            RoomCommand::UpdateMatchFormat {
+                player_id,
+                target_score,
+            } => self.update_match_format(&player_id, target_score),
             RoomCommand::SetReady {
                 player_id,
                 ready,
@@ -169,6 +174,36 @@ impl GameRoom {
         Ok(events)
     }
 
+    fn rename_player(
+        &mut self,
+        player_id: &PlayerId,
+        name: String,
+    ) -> Result<Vec<RoomEvent>, CoreError> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(CoreError::EmptyName);
+        }
+        if self.players.values().any(|existing| {
+            existing.id != *player_id && existing.name.trim().eq_ignore_ascii_case(trimmed)
+        }) {
+            return Err(CoreError::DuplicatePlayerName(trimmed.to_owned()));
+        }
+
+        let player = self
+            .players
+            .get_mut(player_id)
+            .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
+        if player.name == trimmed {
+            return Ok(Vec::new());
+        }
+
+        player.name = trimmed.to_owned();
+        Ok(vec![RoomEvent::PlayerRenamed {
+            player_id: player_id.clone(),
+            name: player.name.clone(),
+        }])
+    }
+
     fn set_ready(
         &mut self,
         player_id: &PlayerId,
@@ -227,6 +262,46 @@ impl GameRoom {
         Ok(vec![RoomEvent::MatchReset {
             requested_by: player_id.clone(),
         }])
+    }
+
+    fn update_match_format(
+        &mut self,
+        player_id: &PlayerId,
+        target_score: u32,
+    ) -> Result<Vec<RoomEvent>, CoreError> {
+        let player = self
+            .players
+            .get(player_id)
+            .ok_or_else(|| CoreError::PlayerNotFound(player_id.clone()))?;
+        if !player.connected {
+            return Err(CoreError::PlayerDisconnected);
+        }
+        if self.host_id.as_ref() != Some(player_id) {
+            return Err(CoreError::HostOnly);
+        }
+        if self.match_in_progress() {
+            return Err(CoreError::MatchInProgress);
+        }
+
+        let mut rules = self.rules.clone();
+        rules.target_score = target_score;
+        rules.validate()?;
+        if self.rules.target_score == target_score {
+            return Ok(Vec::new());
+        }
+
+        self.rules = rules;
+        let mut events = vec![RoomEvent::MatchFormatChanged { target_score }];
+        for player in self.players.values_mut() {
+            if player.ready {
+                player.ready = false;
+                events.push(RoomEvent::ReadyChanged {
+                    player_id: player.id.clone(),
+                    ready: false,
+                });
+            }
+        }
+        Ok(events)
     }
 
     fn set_spectator(
@@ -793,6 +868,168 @@ mod tests {
     }
 
     #[test]
+    fn player_can_be_renamed_within_room() {
+        let mut room = two_player_room();
+
+        let events = room
+            .apply(RoomCommand::RenamePlayer {
+                player_id: PlayerId::new("alice"),
+                name: "  Alicia  ".to_owned(),
+            })
+            .unwrap();
+        let snapshot = room.snapshot();
+        let alice = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == PlayerId::new("alice"))
+            .unwrap();
+
+        assert_eq!(
+            events,
+            vec![RoomEvent::PlayerRenamed {
+                player_id: PlayerId::new("alice"),
+                name: "Alicia".to_owned(),
+            }]
+        );
+        assert_eq!(alice.name, "Alicia");
+        assert_eq!(snapshot.scoreboard[0].name, "Alicia");
+    }
+
+    #[test]
+    fn rename_rejects_duplicate_or_empty_name() {
+        let mut room = two_player_room();
+
+        let duplicate = room
+            .apply(RoomCommand::RenamePlayer {
+                player_id: PlayerId::new("alice"),
+                name: " bob ".to_owned(),
+            })
+            .unwrap_err();
+        let empty = room
+            .apply(RoomCommand::RenamePlayer {
+                player_id: PlayerId::new("alice"),
+                name: "  ".to_owned(),
+            })
+            .unwrap_err();
+
+        assert_eq!(duplicate, CoreError::DuplicatePlayerName("bob".to_owned()));
+        assert_eq!(empty, CoreError::EmptyName);
+    }
+
+    #[test]
+    fn current_host_can_update_race_target_before_match_starts() {
+        let mut room = two_player_room();
+
+        let events = room
+            .apply(RoomCommand::UpdateMatchFormat {
+                player_id: PlayerId::new("alice"),
+                target_score: 3,
+            })
+            .unwrap();
+
+        assert_eq!(room.snapshot().rules.target_score, 3);
+        assert_eq!(
+            events,
+            vec![RoomEvent::MatchFormatChanged { target_score: 3 }]
+        );
+    }
+
+    #[test]
+    fn updating_race_target_clears_ready_players() {
+        let host = Player::participant(PlayerId::new("alice"), "Alice");
+        let mut room =
+            GameRoom::new(RoomId::new("room"), "room", GameRules::default(), host).unwrap();
+
+        room.apply(RoomCommand::SetReady {
+            player_id: PlayerId::new("alice"),
+            ready: true,
+            now_ms: 1_000,
+        })
+        .unwrap();
+        let events = room
+            .apply(RoomCommand::UpdateMatchFormat {
+                player_id: PlayerId::new("alice"),
+                target_score: 3,
+            })
+            .unwrap();
+        let alice = room
+            .snapshot()
+            .players
+            .into_iter()
+            .find(|player| player.id == PlayerId::new("alice"))
+            .unwrap();
+
+        assert!(!alice.ready);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            RoomEvent::ReadyChanged { player_id, ready }
+                if player_id == &PlayerId::new("alice") && !ready
+        )));
+    }
+
+    #[test]
+    fn non_host_cannot_update_race_target() {
+        let mut room = two_player_room();
+
+        let err = room
+            .apply(RoomCommand::UpdateMatchFormat {
+                player_id: PlayerId::new("bob"),
+                target_score: 3,
+            })
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::HostOnly);
+    }
+
+    #[test]
+    fn transferred_host_can_update_race_target() {
+        let mut room = two_player_room();
+
+        room.apply(RoomCommand::Leave {
+            player_id: PlayerId::new("alice"),
+        })
+        .unwrap();
+        room.apply(RoomCommand::UpdateMatchFormat {
+            player_id: PlayerId::new("bob"),
+            target_score: 3,
+        })
+        .unwrap();
+
+        assert_eq!(room.snapshot().host_id, Some(PlayerId::new("bob")));
+        assert_eq!(room.snapshot().rules.target_score, 3);
+    }
+
+    #[test]
+    fn race_target_cannot_change_during_unfinished_match() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1_000);
+
+        let err = room
+            .apply(RoomCommand::UpdateMatchFormat {
+                player_id: PlayerId::new("alice"),
+                target_score: 3,
+            })
+            .unwrap_err();
+
+        assert_eq!(err, CoreError::MatchInProgress);
+    }
+
+    #[test]
+    fn host_can_update_race_target_after_match_finishes() {
+        let mut room = two_player_room();
+        alice_wins_round(&mut room, 1_000);
+        alice_wins_round(&mut room, 2_000);
+
+        room.apply(RoomCommand::UpdateMatchFormat {
+            player_id: PlayerId::new("alice"),
+            target_score: 3,
+        })
+        .unwrap();
+
+        assert_eq!(room.snapshot().rules.target_score, 3);
+    }
+
+    #[test]
     fn finished_match_rejects_ready_and_moves_until_host_resets() {
         let mut room = two_player_room();
         alice_wins_round(&mut room, 1000);
@@ -895,7 +1132,7 @@ mod tests {
     }
 
     #[test]
-    fn best_of_three_finishes_when_a_player_reaches_two_points() {
+    fn race_to_two_finishes_when_a_player_reaches_two_points() {
         let mut room = two_player_room();
 
         alice_wins_round(&mut room, 1000);

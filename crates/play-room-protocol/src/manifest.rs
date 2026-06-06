@@ -1,4 +1,7 @@
-use crate::{ClientRequest, ErrorCode, ServerEvent, ServerMessage, ServerResult, PROTOCOL_VERSION};
+use crate::{
+    ClientRequest, EnterRoomMode, ErrorCode, ServerEvent, ServerMessage, ServerResult,
+    PROTOCOL_VERSION,
+};
 use play_room_core::{
     GameKind, GameRules, Move, PlayerId, PlayerRole, PlayerScore, RoomEvent, RoomId, RoomPhase,
     RoomSnapshot, RoomSummary, SessionToken,
@@ -19,6 +22,7 @@ pub struct ProtocolManifest {
     pub moves: Vec<String>,
     pub rps_moves: Vec<String>,
     pub player_roles: Vec<String>,
+    pub enter_room_modes: Vec<String>,
     pub error_codes: Vec<String>,
     pub round_end_reasons: Vec<String>,
     pub round_outcomes: Vec<String>,
@@ -37,6 +41,7 @@ pub fn protocol_manifest() -> ProtocolManifest {
         moves: moves(),
         rps_moves: rps_moves(),
         player_roles: player_roles(),
+        enter_room_modes: enter_room_modes(),
         error_codes: error_codes(),
         round_end_reasons: round_end_reasons(),
         round_outcomes: round_outcomes(),
@@ -59,6 +64,7 @@ export type SessionToken = Id;
 export type GameKind = ProtocolValues['game_kinds'][number];
 export type Move = ProtocolValues['moves'][number];
 export type PlayerRole = ProtocolValues['player_roles'][number];
+export type EnterRoomMode = ProtocolValues['enter_room_modes'][number];
 export type ErrorCode = ProtocolValues['error_codes'][number];
 export type RoundEndReason = ProtocolValues['round_end_reasons'][number];
 
@@ -134,6 +140,8 @@ export type RoomEvent =
   | { event: 'player_left'; player_id: PlayerId }
   | { event: 'player_disconnected'; player_id: PlayerId }
   | { event: 'player_reconnected'; player_id: PlayerId }
+  | { event: 'player_renamed'; player_id: PlayerId; name: string }
+  | { event: 'match_format_changed'; target_score: number }
   | { event: 'ready_changed'; player_id: PlayerId; ready: boolean }
   | { event: 'role_changed'; player_id: PlayerId; role: PlayerRole }
   | { event: 'round_started'; round: number; deadline_ms: number }
@@ -149,6 +157,9 @@ export type ClientRequest =
   | { type: 'create_room'; name: string; rules: GameRules | null }
   | { type: 'join_room'; room_id: RoomId }
   | { type: 'spectate_room'; room_id: RoomId }
+  | { type: 'enter_room'; room_id: RoomId; mode: EnterRoomMode }
+  | { type: 'update_display_name'; name: string }
+  | { type: 'update_match_format'; target_score: number }
   | { type: 'leave_room' }
   | { type: 'start_next_match' }
   | { type: 'set_ready'; ready: boolean }
@@ -163,6 +174,7 @@ export interface ClientEnvelope {
 
 export interface WelcomeState {
   player_id: PlayerId;
+  display_name: string;
   reconnect_token: SessionToken;
   protocol_version: number;
   reconnected: boolean;
@@ -176,6 +188,7 @@ export type ServerResult =
   | {
       status: 'welcome';
       player_id: PlayerId;
+      display_name: string;
       reconnect_token: SessionToken;
       protocol_version: number;
       reconnected: boolean;
@@ -215,6 +228,7 @@ pub fn typescript_constants_module() -> String {
          {moves}\n\
          {rps_moves}\n\
          {player_roles}\n\
+         {enter_room_modes}\n\
          {error_codes}\n\
          {round_end_reasons}\n\
          {round_outcomes}\
@@ -231,6 +245,7 @@ pub fn typescript_constants_module() -> String {
         moves = ts_field("moves", &manifest.moves),
         rps_moves = ts_field("rps_moves", &manifest.rps_moves),
         player_roles = ts_field("player_roles", &manifest.player_roles),
+        enter_room_modes = ts_field("enter_room_modes", &manifest.enter_room_modes),
         error_codes = ts_field("error_codes", &manifest.error_codes),
         round_end_reasons = ts_field("round_end_reasons", &manifest.round_end_reasons),
         round_outcomes = ts_field_last("round_outcomes", &manifest.round_outcomes),
@@ -277,6 +292,14 @@ fn rps_moves() -> Vec<String> {
 
 fn player_roles() -> Vec<String> {
     simple_values(&[PlayerRole::Participant, PlayerRole::Spectator])
+}
+
+fn enter_room_modes() -> Vec<String> {
+    simple_values(&[
+        EnterRoomMode::Auto,
+        EnterRoomMode::Participant,
+        EnterRoomMode::Spectator,
+    ])
 }
 
 fn error_codes() -> Vec<String> {
@@ -363,6 +386,14 @@ fn room_event_types() -> Vec<String> {
             "event",
         ),
         tagged_value(
+            &RoomEvent::PlayerRenamed {
+                player_id: player_id.clone(),
+                name: "Alicia".to_owned(),
+            },
+            "event",
+        ),
+        tagged_value(&RoomEvent::MatchFormatChanged { target_score: 3 }, "event"),
+        tagged_value(
             &RoomEvent::ReadyChanged {
                 player_id: player_id.clone(),
                 ready: true,
@@ -441,6 +472,23 @@ fn client_request_types() -> Vec<String> {
             },
             "type",
         ),
+        tagged_value(
+            &ClientRequest::EnterRoom {
+                room_id: room_id.clone(),
+                mode: EnterRoomMode::Auto,
+            },
+            "type",
+        ),
+        tagged_value(
+            &ClientRequest::UpdateDisplayName {
+                name: "Alicia".to_owned(),
+            },
+            "type",
+        ),
+        tagged_value(
+            &ClientRequest::UpdateMatchFormat { target_score: 3 },
+            "type",
+        ),
         tagged_value(&ClientRequest::LeaveRoom, "type"),
         tagged_value(&ClientRequest::StartNextMatch, "type"),
         tagged_value(&ClientRequest::SetReady { ready: true }, "type"),
@@ -457,6 +505,7 @@ fn server_result_statuses() -> Vec<String> {
         tagged_value(
             &ServerResult::Welcome {
                 player_id: PlayerId::new("player"),
+                display_name: "Alice".to_owned(),
                 reconnect_token: SessionToken::new("session"),
                 protocol_version: PROTOCOL_VERSION,
                 reconnected: false,
@@ -636,12 +685,28 @@ mod tests {
         assert_eq!(manifest.server_message_kinds, vec!["response", "event"]);
         assert!(manifest
             .client_request_types
-            .contains(&"connect".to_owned()));
+            .contains(&"enter_room".to_owned()));
+        assert!(manifest
+            .client_request_types
+            .contains(&"update_display_name".to_owned()));
+        assert!(manifest
+            .client_request_types
+            .contains(&"update_match_format".to_owned()));
+        assert_eq!(
+            manifest.enter_room_modes,
+            vec!["auto", "participant", "spectator"]
+        );
         assert!(manifest
             .error_codes
             .contains(&"client_limit_reached".to_owned()));
         assert!(manifest
             .room_event_types
             .contains(&"move_accepted".to_owned()));
+        assert!(manifest
+            .room_event_types
+            .contains(&"player_renamed".to_owned()));
+        assert!(manifest
+            .room_event_types
+            .contains(&"match_format_changed".to_owned()));
     }
 }

@@ -2,13 +2,13 @@
   import { roomsStore } from '../../lib/stores/rooms';
   import { sessionStore } from '../../lib/stores/session';
   import { isPlayRoomRequestError, playRoomClient } from '../../lib/client/play-room-client';
-  import { defaultRules, gameLabel } from '../../lib/protocol/rules';
+  import { defaultRules, gameLabel, raceToLabel, RACE_TARGETS, type RaceTarget } from '../../lib/protocol/rules';
   import type { GameKind } from '../../lib/protocol/types';
   import Button from '../ui/Button.svelte';
   import TextInput from '../ui/TextInput.svelte';
 
   let roomName = 'testroom';
-  let bestOf: 3 | 5 = 3;
+  let raceTo: RaceTarget = 2;
   let game: GameKind = 'rock_paper_scissors_lizard_spock';
   let submitting = false;
   let error: string | null = null;
@@ -51,7 +51,7 @@
     serverSuggestions = [];
 
     try {
-      await playRoomClient.createRoom(trimmedName, defaultRules(game, bestOf));
+      await playRoomClient.createRoom(trimmedName, defaultRules(game, raceTo));
     } catch (err) {
       error = err instanceof Error ? err.message : 'Create room failed';
       serverSuggestions = isPlayRoomRequestError(err) ? err.suggestions : [];
@@ -76,20 +76,28 @@
     <div class="option-group">
       <span>Match</span>
       <div class="segmented-control">
-        <button class:active={bestOf === 3} type="button" onclick={() => (bestOf = 3)}>Best of 3</button>
-        <button class:active={bestOf === 5} type="button" onclick={() => (bestOf = 5)}>Best of 5</button>
+        {#each RACE_TARGETS as target}
+          <button class:active={raceTo === target} type="button" onclick={() => (raceTo = target)}>
+            {raceToLabel(target)}
+          </button>
+        {/each}
       </div>
     </div>
   </div>
 
   {#if duplicate || serverSuggestions.length > 0}
     <div class="form-warning">
-      {error ?? 'Room name already exists.'}
       {#if suggestions.length > 0}
-        Try
-        {#each suggestions as suggestion, index}
-          <button type="button" onclick={() => chooseSuggestion(suggestion)}>{suggestion}</button>{index < suggestions.length - 1 ? ',' : '.'}
-        {/each}
+        <span>{error ?? 'Room name already exists.'} Use a suggested room name:</span>
+        <span class="suggestion-list">
+          {#each suggestions as suggestion}
+            <button type="button" class="suggestion-pill" disabled={submitting} onclick={() => chooseSuggestion(suggestion)}>
+              {suggestion}
+            </button>
+          {/each}
+        </span>
+      {:else}
+        {error ?? 'Room name already exists.'}
       {/if}
     </div>
   {:else if error}

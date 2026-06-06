@@ -23,13 +23,16 @@ fn render_response(request_id: u64, result: &ServerResult) {
         }
         ServerResult::Welcome {
             player_id,
+            display_name,
             reconnect_token,
             protocol_version,
             reconnected,
             stale_token_replaced,
             room_restored,
         } => {
-            println!("connected as {player_id} using protocol v{protocol_version}");
+            println!(
+                "connected as {display_name} ({player_id}) using protocol v{protocol_version}"
+            );
             println!("reconnect token: {reconnect_token}");
             if *stale_token_replaced {
                 println!("reconnect status: stale token replaced with a fresh session");
@@ -47,15 +50,14 @@ fn render_response(request_id: u64, result: &ServerResult) {
                 println!("no rooms");
             } else {
                 for room in rooms {
-                    let best_of = room.target_score.saturating_mul(2).saturating_sub(1);
                     println!(
-                        "{} | {} | players {}/{} | spectators {} | best of {}",
+                        "{} | {} | players {}/{} | spectators {} | race to {}",
                         room.id,
                         room.name,
                         room.players,
                         room.max_players,
                         room.spectators,
-                        best_of
+                        room.target_score
                     );
                 }
             }
@@ -80,6 +82,12 @@ fn render_event(event: &ServerEvent) {
             }
             RoomEvent::PlayerReconnected { player_id } => {
                 println!("[{room_id}] {player_id} reconnected")
+            }
+            RoomEvent::PlayerRenamed { player_id, name } => {
+                println!("[{room_id}] {player_id} renamed to {name}")
+            }
+            RoomEvent::MatchFormatChanged { target_score } => {
+                println!("[{room_id}] match format changed: race to {target_score}")
             }
             RoomEvent::ReadyChanged { player_id, ready } => {
                 println!("[{room_id}] {player_id} ready={ready}")

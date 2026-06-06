@@ -4,7 +4,7 @@ use common::{id, ready, two_player_room};
 use play_room_core::{Move, RoomCommand, RoomPhase};
 
 #[test]
-fn two_players_can_finish_a_best_of_three_match() {
+fn two_players_can_finish_a_race_to_two_match() {
     let mut room = two_player_room();
 
     for now in [1000, 2000] {

@@ -35,10 +35,6 @@ impl GameRules {
         }
     }
 
-    pub fn best_of_rounds(&self) -> u32 {
-        self.target_score.saturating_mul(2).saturating_sub(1)
-    }
-
     pub fn validate(&self) -> Result<(), CoreError> {
         if self.min_players != 2 || self.max_players != 2 {
             return Err(CoreError::InvalidRules(
@@ -95,23 +91,6 @@ mod tests {
         assert_eq!(rules.min_players, 2);
         assert_eq!(rules.max_players, 2);
         assert!(rules.validate().is_ok());
-    }
-
-    #[test]
-    fn best_of_rounds_maps_target_score_to_max_rounds() {
-        let best_of_three = GameRules::default();
-        let best_of_five = GameRules {
-            target_score: 3,
-            ..GameRules::default()
-        };
-        let invalid_zero = GameRules {
-            target_score: 0,
-            ..GameRules::default()
-        };
-
-        assert_eq!(best_of_three.best_of_rounds(), 3);
-        assert_eq!(best_of_five.best_of_rounds(), 5);
-        assert_eq!(invalid_zero.best_of_rounds(), 0);
     }
 
     #[test]

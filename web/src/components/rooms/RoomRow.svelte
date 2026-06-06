@@ -14,6 +14,14 @@
 
   $: actionLabel = action === 'current' ? 'Current' : action === 'join' ? 'Join' : 'Watch';
 
+  async function performRoomAction() {
+    if (action === 'join') {
+      await playRoomClient.joinOrSpectateRoom(room.id);
+      return;
+    }
+    await playRoomClient.spectateRoom(room.id);
+  }
+
   async function act() {
     if (action === 'current' || busy) return;
 
@@ -23,11 +31,29 @@
     suggestions = [];
 
     try {
-      if (action === 'join') {
-        await playRoomClient.joinOrSpectateRoom(room.id);
-        return;
+      await performRoomAction();
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Room action failed';
+      if (isPlayRoomRequestError(err)) {
+        warning = err.code === 'player_name_exists';
+        suggestions = err.suggestions;
       }
-      await playRoomClient.spectateRoom(room.id);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function retryWithDisplayName(suggestion: string) {
+    if (action === 'current' || busy) return;
+
+    busy = true;
+    error = null;
+    warning = false;
+    suggestions = [];
+
+    try {
+      await playRoomClient.updateDisplayName(suggestion);
+      await performRoomAction();
     } catch (err) {
       error = err instanceof Error ? err.message : 'Room action failed';
       if (isPlayRoomRequestError(err)) {
@@ -61,10 +87,14 @@
       {error}
       {#if suggestions.length > 0}
         <span class="room-row-suggestions">
-          Try a different display name:
-          {#each suggestions as suggestion, index}
-            <span class="suggestion-pill">{suggestion}</span>{index < suggestions.length - 1 ? ',' : '.'}
-          {/each}
+          <span>Use a suggested display name:</span>
+          <span class="suggestion-list">
+            {#each suggestions as suggestion}
+              <button type="button" class="suggestion-pill" disabled={busy} onclick={() => retryWithDisplayName(suggestion)}>
+                {suggestion}
+              </button>
+            {/each}
+          </span>
         </span>
       {/if}
     </div>

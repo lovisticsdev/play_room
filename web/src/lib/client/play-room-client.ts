@@ -3,6 +3,7 @@ import { PlayRoomSocket } from './websocket';
 import {
   connectRequest,
   createRoomRequest,
+  enterRoomRequest,
   joinRoomRequest,
   leaveRoomRequest,
   listRoomsRequest,
@@ -12,8 +13,10 @@ import {
   spectateRoomRequest,
   startNextMatchRequest,
   submitMoveRequest,
+  updateDisplayNameRequest,
+  updateMatchFormatRequest,
 } from '../protocol/commands';
-import type { ClientRequest, ErrorCode, GameRules, Move, ServerEvent, ServerResult } from '../protocol/types';
+import type { ClientRequest, ErrorCode, GameRules, Move, RoomSnapshot, ServerEvent, ServerResult } from '../protocol/types';
 import { connectionStore, DEFAULT_SERVER_URL } from '../stores/connection';
 import { currentRoomStore } from '../stores/current-room';
 import { eventLogStore } from '../stores/event-log';
@@ -23,7 +26,6 @@ import { sessionStore } from '../stores/session';
 import { uiStore } from '../stores/ui';
 import {
   clearReconnectToken,
-  loadDisplayName,
   loadReconnectToken,
   loadServerUrl,
   saveDisplayName,
@@ -69,7 +71,6 @@ class PlayRoomClient {
   private reconnectAttempt = 0;
   private reconnectTimerId: ReturnType<typeof setTimeout> | null = null;
   private cleanups: Array<() => void> = [];
-  private pendingDisplayName: string | null = null;
   private roomPollId: ReturnType<typeof setInterval> | null = null;
   private pollingRooms = false;
   private roomSnapshotVersion = 0;
@@ -108,7 +109,6 @@ class PlayRoomClient {
       throw new Error('Display name is required.');
     }
 
-    this.pendingDisplayName = name || loadDisplayName() || 'player';
     connectionStore.setConnecting(url);
 
     await this.openSocket(url);
@@ -122,7 +122,6 @@ class PlayRoomClient {
     this.applyServerResult(result);
     this.startRoomPolling();
     saveServerUrl(url);
-    if (name) saveDisplayName(name);
 
     await this.refreshRooms();
     if (usingReconnect) {
@@ -185,23 +184,33 @@ class PlayRoomClient {
   }
 
   async joinOrSpectateRoom(roomId: string): Promise<void> {
-    try {
-      await this.joinRoom(roomId);
-    } catch (error) {
-      if (error instanceof PlayRoomRequestError && error.code === 'room_full') {
-        eventLogStore.push('warning', 'Room is full; watching as spectator instead');
-        await this.spectateRoom(roomId);
-        return;
-      }
-
-      throw error;
-    }
+    await this.sendAndApply(enterRoomRequest(roomId, 'auto'));
+    await this.refreshRooms();
+    uiStore.closeRoomsModal();
   }
 
   async spectateRoom(roomId: string): Promise<void> {
     await this.sendAndApply(spectateRoomRequest(roomId));
     await this.refreshRooms();
     uiStore.closeRoomsModal();
+  }
+
+  async updateDisplayName(name: string): Promise<void> {
+    const displayName = name.trim();
+    if (!displayName) throw new Error('Display name is required.');
+
+    await this.sendAndApply(updateDisplayNameRequest(displayName));
+    sessionStore.updateDisplayName(displayName);
+    saveDisplayName(displayName);
+    eventLogStore.push('success', `Display name updated to ${displayName}`);
+  }
+
+  async updateMatchFormat(targetScore: number): Promise<void> {
+    if (!Number.isSafeInteger(targetScore) || targetScore < 1) {
+      throw new Error('Race target must be at least 1.');
+    }
+
+    await this.sendAndApply(updateMatchFormatRequest(targetScore));
   }
 
   async leaveRoom(): Promise<void> {
@@ -274,7 +283,6 @@ class PlayRoomClient {
     this.reconnectAttempt = 0;
     this.stopRoomPolling();
     connectionStore.setReconnecting(serverUrl);
-    this.pendingDisplayName = get(sessionStore).displayName || loadDisplayName() || 'reconnected player';
 
     if (trigger === 'transient') {
       if (get(currentRoomStore).room) uiStore.closeRoomsModal();
@@ -468,8 +476,7 @@ class PlayRoomClient {
         eventLogStore.push('error', result.message, result);
         break;
       case 'welcome': {
-        const storedDisplayName = loadDisplayName();
-        const displayName = this.pendingDisplayName ?? (storedDisplayName || null);
+        const displayName = result.display_name;
         sessionStore.setSession({
           playerId: result.player_id,
           displayName,
@@ -477,7 +484,8 @@ class PlayRoomClient {
           protocolVersion: result.protocol_version,
         });
         saveReconnectToken(result.reconnect_token);
-        eventLogStore.push('success', `Connected as ${displayName ?? result.player_id}`);
+        saveDisplayName(displayName);
+        eventLogStore.push('success', `Connected as ${displayName}`);
         break;
       }
       case 'room_list':
@@ -487,6 +495,7 @@ class PlayRoomClient {
         currentRoomStore.setRoom(result.room);
         roomsStore.upsertFromSnapshot(result.room);
         seatReservationsStore.syncRoom(result.room);
+        this.syncLocalDisplayName(result.room);
         this.noteRoomSnapshot();
         eventLogStore.push('protocol', `Snapshot: ${result.room.name}`, result);
         break;
@@ -507,6 +516,7 @@ class PlayRoomClient {
         currentRoomStore.setRoom(event.room);
         roomsStore.upsertFromSnapshot(event.room);
         seatReservationsStore.syncRoom(event.room);
+        this.syncLocalDisplayName(event.room);
         this.noteRoomSnapshot();
         break;
       case 'room_event': {
@@ -520,6 +530,7 @@ class PlayRoomClient {
         if (
           event.event.event === 'player_left'
           || event.event.event === 'player_reconnected'
+          || event.event.event === 'player_renamed'
           || (event.event.event === 'role_changed' && event.event.role === 'spectator')
         ) {
           seatReservationsStore.clearPlayer(event.event.player_id);
@@ -535,6 +546,17 @@ class PlayRoomClient {
         break;
       }
     }
+  }
+
+  private syncLocalDisplayName(room: RoomSnapshot): void {
+    const state = get(sessionStore);
+    if (!state.playerId) return;
+
+    const local = room.players.find((player) => player.id === state.playerId);
+    if (!local || state.displayName === local.name) return;
+
+    sessionStore.updateDisplayName(local.name);
+    saveDisplayName(local.name);
   }
 
   private handleSocketError(event: Event): void {

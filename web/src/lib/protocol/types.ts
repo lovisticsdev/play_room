@@ -3,6 +3,7 @@
 export type {
   ClientEnvelope,
   ClientRequest,
+  EnterRoomMode,
   ErrorCode,
   GameKind,
   GameRules,
