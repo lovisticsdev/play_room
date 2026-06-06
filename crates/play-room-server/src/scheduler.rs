@@ -4,6 +4,7 @@ use play_room_core::RoomId;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
+use tracing::debug;
 
 pub fn now_ms() -> u64 {
     SystemTime::now()
@@ -25,7 +26,13 @@ pub fn schedule_round_timeout(
         }
         let messages = {
             let mut locked = manager.lock().await;
-            locked.timeout_room(&room_id, round, now_ms()).ok()
+            match locked.timeout_room(&room_id, round, now_ms()) {
+                Ok(messages) => Some(messages),
+                Err(err) => {
+                    debug!(%room_id, round, ?err, "ignored scheduled round timeout");
+                    None
+                }
+            }
         };
         if let Some(messages) = messages {
             flush_and_schedule(manager, messages).await;
@@ -79,7 +86,15 @@ pub fn schedule_seat_expiry(manager: Arc<Mutex<RoomManager>>, expiry: SeatExpiry
                     flush_and_schedule(manager.clone(), messages).await;
                     outcome.spectator_expiry
                 }
-                Err(_) => None,
+                Err(err) => {
+                    debug!(
+                        room_id = %expiry.room_id,
+                        player_id = %expiry.player_id,
+                        ?err,
+                        "ignored scheduled participant seat expiry"
+                    );
+                    None
+                }
             }
         };
         if let Some(expiry) = spectator_expiry {
@@ -96,7 +111,18 @@ pub fn schedule_spectator_expiry(manager: Arc<Mutex<RoomManager>>, expiry: Spect
         }
         let messages = {
             let mut locked = manager.lock().await;
-            locked.expire_spectator(&expiry).ok()
+            match locked.expire_spectator(&expiry) {
+                Ok(messages) => Some(messages),
+                Err(err) => {
+                    debug!(
+                        room_id = %expiry.room_id,
+                        player_id = %expiry.player_id,
+                        ?err,
+                        "ignored scheduled spectator expiry"
+                    );
+                    None
+                }
+            }
         };
         if let Some(messages) = messages {
             flush_and_schedule(manager, messages).await;
