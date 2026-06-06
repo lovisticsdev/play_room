@@ -1,5 +1,6 @@
 import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
 import { PROTOCOL_VERSION } from './generated';
+import { RACE_TARGETS } from './rules';
 import { SERVER_MESSAGE_SCHEMA } from './schema';
 import type { RoomSnapshot, ServerMessage, ServerResult } from './types';
 
@@ -81,8 +82,8 @@ function assertSupportedRoomSnapshot(room: RoomSnapshot): void {
     throw new ProtocolDecodeError('Unsupported room rules: browser client expects exactly 2 active participants.');
   }
 
-  if (rules.target_score < 1) {
-    throw new ProtocolDecodeError('Unsupported room rules: target_score must be at least 1.');
+  if (!RACE_TARGETS.some((target) => target === rules.target_score)) {
+    throw new ProtocolDecodeError('Unsupported room rules: target_score must be one of 1, 2, or 3.');
   }
 
   if (rules.round_seconds < 1) {

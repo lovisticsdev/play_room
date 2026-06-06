@@ -75,7 +75,7 @@
 
     <div class="option-group">
       <span>Match</span>
-      <div class="segmented-control">
+      <div class="segmented-control race-segments">
         {#each RACE_TARGETS as target}
           <button class:active={raceTo === target} type="button" onclick={() => (raceTo = target)}>
             {raceToLabel(target)}

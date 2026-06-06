@@ -23,7 +23,7 @@ pub use game::{compare_moves, GameKind, Move, RoundEndReason, RoundOutcome, Roun
 pub use ids::{PlayerId, RoomId, SessionToken};
 pub use player::{Player, PlayerRole};
 pub use room::GameRoom;
-pub use rules::GameRules;
+pub use rules::{GameRules, SUPPORTED_TARGET_SCORES};
 pub use scoreboard::PlayerScore;
 pub use state::{PlayerView, RoomPhase, RoomSnapshot, RoomSummary};
 pub use timer::Deadline;

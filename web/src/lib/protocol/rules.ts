@@ -4,7 +4,7 @@ import type { GameKind, GameRules, Move, PlayerId, RoomPhase } from './types';
 export const RPS_MOVES: Move[] = [...PROTOCOL_VALUES.rps_moves];
 export const RPSLS_MOVES: Move[] = [...PROTOCOL_VALUES.moves];
 
-export const RACE_TARGETS = [1, 2, 3, 5] as const;
+export const RACE_TARGETS = [...PROTOCOL_VALUES.supported_target_scores] as const;
 export type RaceTarget = (typeof RACE_TARGETS)[number];
 
 export function defaultRules(game: GameKind = 'rock_paper_scissors_lizard_spock', targetScore: RaceTarget = 2): GameRules {

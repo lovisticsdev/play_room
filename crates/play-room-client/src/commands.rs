@@ -1,5 +1,5 @@
 use crate::errors::ClientError;
-use play_room_core::{Move, RoomId};
+use play_room_core::{Move, RoomId, SUPPORTED_TARGET_SCORES};
 use play_room_protocol::ClientRequest;
 
 pub fn parse_command(input: &str) -> Result<Option<ClientRequest>, ClientError> {
@@ -57,9 +57,9 @@ pub fn parse_command(input: &str) -> Result<Option<ClientRequest>, ClientError> 
             let target_score = value.parse::<u32>().map_err(|_| {
                 ClientError::InvalidCommand("race target must be a positive number".to_owned())
             })?;
-            if target_score == 0 {
+            if !SUPPORTED_TARGET_SCORES.contains(&target_score) {
                 return Err(ClientError::InvalidCommand(
-                    "race target must be at least 1".to_owned(),
+                    "race target must be one of 1, 2, or 3".to_owned(),
                 ));
             }
             Ok(Some(ClientRequest::UpdateMatchFormat { target_score }))
@@ -110,7 +110,7 @@ fn print_help() {
     println!("  /join <room_id|room_name>");
     println!("  /leave");
     println!("  /name <display name>");
-    println!("  /race <points>");
+    println!("  /race <1|2|3>");
     println!("  /again | /next");
     println!("  /ready | /unready");
     println!("  /move <rock|paper|scissors|lizard|spock>");

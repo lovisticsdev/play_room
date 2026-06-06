@@ -33,6 +33,7 @@ import {
   saveServerUrl,
 } from '../storage/reconnect-token';
 import { formatRoomEvent } from '../view/event-format';
+import { RACE_TARGETS } from '../protocol/rules';
 
 type WelcomeResult = Extract<ServerResult, { status: 'welcome' }>;
 
@@ -206,8 +207,8 @@ class PlayRoomClient {
   }
 
   async updateMatchFormat(targetScore: number): Promise<void> {
-    if (!Number.isSafeInteger(targetScore) || targetScore < 1) {
-      throw new Error('Race target must be at least 1.');
+    if (!RACE_TARGETS.some((target) => target === targetScore)) {
+      throw new Error('Race target must be one of 1, 2, or 3.');
     }
 
     await this.sendAndApply(updateMatchFormatRequest(targetScore));

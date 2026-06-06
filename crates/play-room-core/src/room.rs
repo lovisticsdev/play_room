@@ -935,6 +935,23 @@ mod tests {
     }
 
     #[test]
+    fn race_target_update_rejects_unsupported_targets() {
+        let mut room = two_player_room();
+
+        let err = room
+            .apply(RoomCommand::UpdateMatchFormat {
+                player_id: PlayerId::new("alice"),
+                target_score: 5,
+            })
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            CoreError::InvalidRules("target_score must be one of 1, 2, or 3".to_owned())
+        );
+    }
+
+    #[test]
     fn updating_race_target_clears_ready_players() {
         let host = Player::participant(PlayerId::new("alice"), "Alice");
         let mut room =

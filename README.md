@@ -147,7 +147,7 @@ Useful terminal commands:
 /join <room_id|room_name>     join an existing room by ID or exact name
 /leave                        leave the current room
 /name <display name>          update your display name
-/race <points>                update the Race to N target as current host
+/race <1|2|3>                 update the Race to N target as current host
 /again | /next                reset a finished match as host
 /ready                        mark yourself ready
 /unready                      clear your ready state
@@ -193,7 +193,7 @@ Rooms move through:
 Lobby -> InRound -> Lobby -> ... -> Finished -> Lobby
 ```
 
-Default rooms are Race to 2, represented as `target_score = 2`, meaning the first participant to two points takes the match. Draws and no-contests do not award points, so rounds can continue until a player reaches the room target. The current host can change the Race to N target before the first round or after a match has finished. Supported competitive rooms are exactly two active participants because the RPS/RPSLS resolver compares one participant against one opponent.
+Default rooms are Race to 2, represented as `target_score = 2`, meaning the first participant to two points takes the match. Supported room targets are Race to 1, Race to 2, and Race to 3. Draws and no-contests do not award points, so rounds can continue until a player reaches the room target. The current host can change the Race to N target before the first round or after a match has finished. Supported competitive rooms are exactly two active participants because the RPS/RPSLS resolver compares one participant against one opponent.
 
 Participants can join, leave, ready, unready, submit moves, and appear in the scoreboard. Spectators can watch room state but cannot submit moves and do not appear in competitive scores.
 

@@ -30,5 +30,7 @@ export const PROTOCOL_VALUES = {
 
   round_end_reasons: ["all_moves_submitted", "timeout", "player_left"],
 
-  round_outcomes: ["draw", "win", "timeout_win", "no_contest"]
+  round_outcomes: ["draw", "win", "timeout_win", "no_contest"],
+
+  supported_target_scores: [1, 2, 3]
 } as const;

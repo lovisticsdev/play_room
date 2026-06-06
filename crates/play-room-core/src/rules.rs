@@ -2,6 +2,8 @@ use crate::{errors::CoreError, game::GameKind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub const SUPPORTED_TARGET_SCORES: [u32; 3] = [1, 2, 3];
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GameRules {
     pub game: GameKind,
@@ -41,9 +43,9 @@ impl GameRules {
                 "RPS/RPSLS rooms support exactly 2 active participants".to_owned(),
             ));
         }
-        if self.target_score == 0 {
+        if !SUPPORTED_TARGET_SCORES.contains(&self.target_score) {
             return Err(CoreError::InvalidRules(
-                "target_score must be at least 1".to_owned(),
+                "target_score must be one of 1, 2, or 3".to_owned(),
             ));
         }
         if self.round_seconds == 0 {
@@ -130,7 +132,20 @@ mod tests {
 
         assert_eq!(
             rules.validate().unwrap_err(),
-            CoreError::InvalidRules("target_score must be at least 1".to_owned())
+            CoreError::InvalidRules("target_score must be one of 1, 2, or 3".to_owned())
+        );
+    }
+
+    #[test]
+    fn rules_reject_unsupported_target_score() {
+        let rules = GameRules {
+            target_score: 5,
+            ..GameRules::default()
+        };
+
+        assert_eq!(
+            rules.validate().unwrap_err(),
+            CoreError::InvalidRules("target_score must be one of 1, 2, or 3".to_owned())
         );
     }
 

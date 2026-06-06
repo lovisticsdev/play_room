@@ -4,7 +4,7 @@ use crate::{
 };
 use play_room_core::{
     GameKind, GameRules, Move, PlayerId, PlayerRole, PlayerScore, RoomEvent, RoomId, RoomPhase,
-    RoomSnapshot, RoomSummary, SessionToken,
+    RoomSnapshot, RoomSummary, SessionToken, SUPPORTED_TARGET_SCORES,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -26,6 +26,7 @@ pub struct ProtocolManifest {
     pub error_codes: Vec<String>,
     pub round_end_reasons: Vec<String>,
     pub round_outcomes: Vec<String>,
+    pub supported_target_scores: Vec<u32>,
 }
 
 pub fn protocol_manifest() -> ProtocolManifest {
@@ -45,6 +46,7 @@ pub fn protocol_manifest() -> ProtocolManifest {
         error_codes: error_codes(),
         round_end_reasons: round_end_reasons(),
         round_outcomes: round_outcomes(),
+        supported_target_scores: SUPPORTED_TARGET_SCORES.to_vec(),
     }
 }
 
@@ -231,7 +233,8 @@ pub fn typescript_constants_module() -> String {
          {enter_room_modes}\n\
          {error_codes}\n\
          {round_end_reasons}\n\
-         {round_outcomes}\
+         {round_outcomes}\n\
+         {supported_target_scores}\
          }} as const;\n",
         protocol_version = manifest.protocol_version,
         server_message_kinds = ts_field("server_message_kinds", &manifest.server_message_kinds),
@@ -248,7 +251,9 @@ pub fn typescript_constants_module() -> String {
         enter_room_modes = ts_field("enter_room_modes", &manifest.enter_room_modes),
         error_codes = ts_field("error_codes", &manifest.error_codes),
         round_end_reasons = ts_field("round_end_reasons", &manifest.round_end_reasons),
-        round_outcomes = ts_field_last("round_outcomes", &manifest.round_outcomes),
+        round_outcomes = ts_field("round_outcomes", &manifest.round_outcomes),
+        supported_target_scores =
+            ts_number_field_last("supported_target_scores", &manifest.supported_target_scores),
     )
 }
 
@@ -256,8 +261,13 @@ fn ts_field(name: &str, values: &[String]) -> String {
     format!("  {name}: {},\n", ts_array(values))
 }
 
-fn ts_field_last(name: &str, values: &[String]) -> String {
-    format!("  {name}: {}\n", ts_array(values))
+fn ts_number_field_last(name: &str, values: &[u32]) -> String {
+    let encoded = values
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("  {name}: [{encoded}]\n")
 }
 
 fn ts_array(values: &[String]) -> String {
@@ -708,5 +718,6 @@ mod tests {
         assert!(manifest
             .room_event_types
             .contains(&"match_format_changed".to_owned()));
+        assert_eq!(manifest.supported_target_scores, vec![1, 2, 3]);
     }
 }
