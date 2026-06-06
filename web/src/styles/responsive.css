@@ -1,0 +1,272 @@
+@media (max-width: 1180px) {
+  .match-surface {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  .app-layout {
+    margin-top: 10px;
+  }
+
+  .top-bar {
+    min-height: 0;
+    align-items: stretch;
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .brand {
+    justify-content: center;
+  }
+
+  .brand-logo {
+    background-position: center;
+  }
+
+  .top-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .identity-chip,
+  .token-button,
+  .icon-button {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .identity-chip {
+    max-width: none;
+  }
+
+  .token-button {
+    grid-column: 1 / -1;
+  }
+
+  .room-header,
+  .duel-arena,
+  .match-action-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .match-surface {
+    padding: 18px;
+  }
+
+  .room-header {
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .duel-arena {
+    gap: 16px;
+    padding: 20px;
+  }
+
+  .match-action-strip {
+    margin-top: 14px;
+  }
+
+  .match-actions {
+    justify-content: stretch;
+  }
+
+  .match-actions .button {
+    flex: 1 1 160px;
+  }
+
+  .room-round-block {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .round-timer {
+    justify-self: start;
+  }
+
+  .move-selector {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .locked-banner,
+  .result-banner,
+  .connected-card {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .room-row,
+  .notification-stack,
+  .connect-grid,
+  .browser-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .room-row-meta {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .app-shell {
+    padding: 6px;
+  }
+
+  .top-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-logo {
+    width: 136px;
+    height: 44px;
+  }
+
+  .app-layout {
+    gap: 8px;
+  }
+
+  .match-surface {
+    padding: 14px;
+    background-position: center top;
+  }
+
+  .duel-arena {
+    padding: 12px;
+  }
+
+  .duel-card {
+    padding: 12px;
+  }
+
+  .match-action-strip,
+  .locked-banner,
+  .result-banner {
+    padding: 12px;
+  }
+
+  .move-selector {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .move-button {
+    min-height: 104px;
+  }
+
+  .spectator-list {
+    grid-template-columns: 1fr;
+    max-height: 180px;
+  }
+
+  .modal-shell {
+    width: calc(100vw - 14px);
+  }
+
+  .modal-section,
+  .modal-header {
+    margin-left: 12px;
+    margin-right: 12px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+.duel-arena.finished {
+  border-color: rgba(115, 227, 76, 0.28);
+  background:
+    radial-gradient(circle at 50% 0, rgba(115, 227, 76, 0.1), transparent 42%),
+    rgba(3, 11, 18, 0.64);
+}
+
+.result-banner.match-result {
+  border-color: rgba(21, 223, 234, 0.42);
+  background:
+    linear-gradient(90deg, rgba(21, 223, 234, 0.12), rgba(115, 227, 76, 0.08)),
+    rgba(8, 22, 35, 0.82);
+}
+
+.final-scoreline span:first-child {
+  color: var(--lime);
+  border-color: rgba(115, 227, 76, 0.32);
+}
+
+.option-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.option-group {
+  display: grid;
+  gap: 8px;
+}
+
+.option-group > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(2, 8, 13, 0.38);
+}
+
+.segmented-control.race-segments {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.segmented-control button {
+  min-height: 40px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 800;
+}
+
+.segmented-control button.active {
+  color: var(--cyan);
+  background: rgba(21, 223, 234, 0.12);
+  box-shadow: inset 0 0 18px rgba(21, 223, 234, 0.08);
+}
+
+.action-note {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: rgba(2, 8, 13, 0.42);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 980px) {
+  .option-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .segmented-control.race-segments button {
+    padding-inline: 4px;
+    font-size: 0.82rem;
+  }
+}
+.player-row.reserved {
+  border-color: rgba(244, 179, 33, 0.52);
+  background:
+    linear-gradient(90deg, rgba(244, 179, 33, 0.08), transparent 60%),
+    rgba(2, 8, 13, 0.38);
+}
+
+.player-row.reserved .score-value {
+  color: var(--amber);
+}

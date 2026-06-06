@@ -1,0 +1,80 @@
+.notification-stack {
+  position: fixed;
+  z-index: 30;
+  top: 92px;
+  right: 24px;
+  width: min(360px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.speech-toast {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+  align-items: start;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(21, 223, 234, 0.28);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(8, 24, 37, 0.98), rgba(2, 8, 15, 0.96));
+  box-shadow: var(--shadow), var(--glow-cyan);
+  pointer-events: auto;
+  text-align: left;
+  animation: toast-in 180ms ease-out;
+}
+
+.speech-toast::after {
+  content: "";
+  position: absolute;
+  right: 28px;
+  top: -7px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  border-left: 1px solid rgba(21, 223, 234, 0.28);
+  border-top: 1px solid rgba(21, 223, 234, 0.28);
+  background: rgba(8, 24, 37, 0.98);
+}
+
+.speech-toast time {
+  color: var(--faint);
+  font-size: 0.78rem;
+}
+
+.speech-toast span {
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.speech-toast.success span {
+  color: var(--lime);
+}
+
+.speech-toast.warning span {
+  color: var(--amber);
+}
+
+.speech-toast.error span {
+  color: var(--coral);
+}
+
+.speech-toast.protocol span {
+  color: var(--cyan);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
