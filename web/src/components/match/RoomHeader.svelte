@@ -47,12 +47,11 @@
   $: finished = room.phase.phase === 'finished';
   $: formatEditable = room.host_id === $sessionStore.playerId && ((room.round === 0 && room.phase.phase === 'lobby') || finished);
   $: winnerName = room.phase.phase === 'finished' ? playerName(room, room.phase.winner) : null;
-  $: stateTitle = inRound ? 'Round in progress' : finished ? 'Match complete' : 'Lobby ready check';
+  $: showStateBlock = inRound || finished;
+  $: stateTitle = inRound ? 'Round in progress' : 'Match complete';
   $: stateDetail = inRound
     ? 'Moves are locked when the timer hits zero.'
-    : finished
-      ? `${winnerName} won. The host can start the next match.`
-      : 'Ready participants start the next round.';
+    : `${winnerName} won. The host can start the next match.`;
   $: currentRound = roundLabel(room.round, room.phase);
 </script>
 
@@ -87,10 +86,12 @@
     {/if}
   </div>
 
-  <div class="room-state-block">
-    <strong>{stateTitle}</strong>
-    <span>{stateDetail}</span>
-  </div>
+  {#if showStateBlock}
+    <div class="room-state-block">
+      <strong>{stateTitle}</strong>
+      <span>{stateDetail}</span>
+    </div>
+  {/if}
 
   {#if deadline}
     <RoundTimer deadlineMs={deadline} />

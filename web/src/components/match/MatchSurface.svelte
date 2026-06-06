@@ -114,10 +114,8 @@
           <span>The final scoreboard is locked until the host starts the next match.</span>
         {:else if spectatorMode}
           <strong>Watching lobby</strong>
-          <span>Participants must ready up before the next round starts.</span>
         {:else}
-          <strong>Waiting for ready check</strong>
-          <span>Participants must be ready before the round starts.</span>
+          <strong>Lobby</strong>
         {/if}
         <div class="pulse-dots" aria-hidden="true"><span></span><span></span><span></span></div>
       </div>
